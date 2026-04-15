@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Dark background -->
+  <rect width="32" height="32" rx="7" fill="#0d1117"/>
+  <rect width="32" height="32" rx="7" fill="none" stroke="#3fb950" stroke-width="1.5"/>
+
+  <!-- Gear shape (simplified cog) -->
+  <g transform="translate(16,16)">
+    <!-- Gear teeth (8 teeth as small rects rotated around center) -->
+    <rect x="-2.5" y="-13" width="5" height="4" rx="1" fill="#3fb950" transform="rotate(0)"/>
+    <rect x="-2.5" y="-13" width="5" height="4" rx="1" fill="#3fb950" transform="rotate(45)"/>
+    <rect x="-2.5" y="-13" width="5" height="4" rx="1" fill="#3fb950" transform="rotate(90)"/>
+    <rect x="-2.5" y="-13" width="5" height="4" rx="1" fill="#3fb950" transform="rotate(135)"/>
+    <rect x="-2.5" y="-13" width="5" height="4" rx="1" fill="#3fb950" transform="rotate(180)"/>
+    <rect x="-2.5" y="-13" width="5" height="4" rx="1" fill="#3fb950" transform="rotate(225)"/>
+    <rect x="-2.5" y="-13" width="5" height="4" rx="1" fill="#3fb950" transform="rotate(270)"/>
+    <rect x="-2.5" y="-13" width="5" height="4" rx="1" fill="#3fb950" transform="rotate(315)"/>
+    <!-- Outer ring -->
+    <circle r="9" fill="#1a4422" stroke="#3fb950" stroke-width="1.5"/>
+    <!-- Inner hole -->
+    <circle r="4" fill="#0d1117"/>
+    <!-- Center dot -->
+    <circle r="1.8" fill="#3fb950"/>
+  </g>
+</svg>
