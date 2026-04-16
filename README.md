@@ -1,8 +1,21 @@
 # ServiceNow JDBC · Python Container Setup Guide
 
-Interactive step-by-step guide to configure a ServiceNow JDBC driver inside a Python Docker container. Supports **English** and **Portuguese (PT-BR)**.
+Interactive step-by-step guide to configure a ServiceNow JDBC driver inside a Python Docker container.
+Supports **English 🇺🇸** and **Portuguese PT-BR 🇧🇷**.
 
 🔗 **Live page:** `https://<your-github-username>.github.io/<your-repo-name>/`
+
+---
+
+## Features
+
+- 8-step wizard with progress tracking
+- Live config panel — instance name, username, JAR path update all code snippets in real time
+- **`.env` generator** — enter your password, preview the file, then download it with one click
+- One-click copy on every code block
+- Interactive prerequisites checklist
+- Troubleshooting accordion (5 common errors)
+- Full EN / PT-BR language toggle
 
 ---
 
@@ -18,7 +31,7 @@ Name it anything, e.g. `sn-jdbc-setup`.
 ### Step 2 — Push this folder
 
 ```bash
-# Inside this folder (where index.html and README.md are):
+# Inside this folder:
 git init
 git add .
 git commit -m "Initial commit"
@@ -35,22 +48,35 @@ git push -u origin main
 4. Set branch to `main` and folder to `/ (root)`.
 5. Click **Save**.
 
-GitHub will show a green banner with the URL within ~60 seconds:
-`https://<your-username>.github.io/<your-repo-name>/`
+Your page will be live at `https://<your-username>.github.io/<your-repo-name>/` within ~60 seconds.
+
+---
+
+## Credentials and the .env file
+
+The guide generates a `.env` file from the config panel on the left sidebar.
+
+**Workflow for developers:**
+
+```bash
+# 1. Copy the safe template
+cp .env.example .env
+
+# 2. Fill in your real password
+nano .env
+
+# 3. Run the container
+docker run --env-file .env sn-jdbc-app
+```
+
+> `.env` is in `.gitignore` and will never be committed.
+> `.env.example` IS committed — it documents required variables without exposing values.
 
 ---
 
 ## Updating the page
 
-Edit `index.html`, then push:
-
-```bash
-git add index.html
-git commit -m "Update guide"
-git push
-```
-
-GitHub Pages redeploys automatically on every push to `main`. Changes are live within ~30 seconds.
+Edit `index.html`, commit, and push. GitHub Pages redeploys automatically within ~30 seconds.
 
 ---
 
@@ -58,8 +84,14 @@ GitHub Pages redeploys automatically on every push to `main`. Changes are live w
 
 ```
 .
-├── index.html   ← the entire guide (self-contained, no dependencies)
-└── README.md    ← this file
+├── index.html          ← full interactive guide (self-contained)
+├── favicon.svg         ← modern browsers
+├── favicon.ico         ← legacy browsers (16×16, 32×32, 48×48)
+├── favicon-192.png     ← Apple touch icon
+├── .env.example        ← safe credentials template (committed)
+├── .gitignore          ← protects .env and drivers/ from being committed
+└── README.md           ← this file
 ```
 
-The guide is a single self-contained HTML file with no external dependencies beyond Google Fonts (loaded from CDN). It works offline too — fonts will fall back to system fonts.
+> `drivers/` and `.env` are both in `.gitignore`.
+> Each developer downloads the JAR from their own ServiceNow instance.

@@ -1,0 +1,33 @@
+# ── Secrets — NEVER commit these ──────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── ServiceNow JDBC driver ─────────────────────────────────
+# The JAR is proprietary and instance-specific.
+# Each developer downloads it from their own SN instance.
+drivers/
+*.jar
+
+# ── Python ────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+
+# ── Docker ────────────────────────────────────────────────
+# Uncomment if you add docker-compose overrides locally
+# docker-compose.override.yml
+
+# ── OS / Editor ───────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
