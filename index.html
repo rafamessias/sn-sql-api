@@ -98,6 +98,26 @@ body{background:var(--bg);color:var(--tx);font-family:var(--sans);font-size:14px
 .ck-prog{font-family:var(--mono);font-size:12px;color:var(--ts);margin-bottom:8px}
 .ck-prog span{color:var(--ac)}
 ic{font-family:var(--mono);font-size:12px;background:var(--sf2);border:1px solid var(--bd);border-radius:4px;padding:1px 6px;color:var(--blue)}
+/* ── Password row ── */
+.pw-row{position:relative;margin-bottom:10px}
+.pw-row .fi{margin-bottom:0;padding-right:36px}
+.eye-btn{position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--ts);cursor:pointer;font-size:13px;padding:2px;line-height:1;transition:color .15s}
+.eye-btn:hover{color:var(--tm)}
+/* ── .env panel ── */
+.env-panel{margin:0 16px 16px;border:1px solid var(--bd);border-radius:8px;overflow:hidden}
+.env-panel-hdr{display:flex;align-items:center;justify-content:space-between;background:var(--sf2);padding:8px 12px;border-bottom:1px solid var(--bd)}
+.env-panel-title{font-family:var(--mono);font-size:11px;color:var(--amber);display:flex;align-items:center;gap:6px}
+.env-dl-btn{font-family:var(--mono);font-size:11px;background:var(--ac-dim);border:1px solid var(--ac);border-radius:4px;color:var(--ac);padding:3px 10px;cursor:pointer;transition:all .15s;display:flex;align-items:center;gap:5px}
+.env-dl-btn:hover{background:var(--ac);color:#0d1117}
+.env-dl-btn.ok{background:var(--ac);color:#0d1117}
+.env-preview{background:#010409;padding:12px 14px;font-family:var(--mono);font-size:12px;line-height:1.9;white-space:pre;color:#e6edf3;overflow-x:auto}
+/* ── .env in main content ── */
+.env-card{background:var(--sf);border:1px solid var(--bd);border-radius:10px;overflow:hidden;margin:20px 0}
+.env-card-hdr{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-bottom:1px solid var(--bd);background:var(--sf2)}
+.env-card-title{font-family:var(--mono);font-size:12px;color:var(--amber);display:flex;align-items:center;gap:8px}
+.env-card-actions{display:flex;gap:8px}
+.env-card-body{padding:16px 18px;font-family:var(--mono);font-size:13px;line-height:2;white-space:pre;overflow-x:auto;background:#010409;color:#e6edf3}
+.env-security-note{display:flex;gap:10px;padding:10px 14px;background:rgba(227,179,65,.05);border-top:1px solid rgba(227,179,65,.15);font-size:11px;color:var(--ts);line-height:1.5;font-family:var(--mono)}
 .navbtns{display:flex;justify-content:space-between;align-items:center;margin-top:40px;padding-top:24px;border-top:1px solid var(--bd)}
 .btn{font-family:var(--sans);font-size:13px;font-weight:500;padding:9px 20px;border-radius:6px;cursor:pointer;transition:all .15s;display:flex;align-items:center;gap:8px;border:1px solid var(--bd);background:none;color:var(--tm)}
 .btn:hover{background:var(--sf2);color:var(--tx)}
@@ -159,9 +179,25 @@ strong{color:var(--tx);font-weight:500}
       <div class="cfg-hint" id="hintInstance">→ mycompany.service-now.com</div>
       <div class="fl" id="lblUser">Service account username</div>
       <input class="fi" id="cfgUser" placeholder="svc_jdbc_account" value="svc_jdbc_account">
+      <div class="fl" id="lblPass">Password</div>
+      <div class="pw-row">
+        <input class="fi" id="cfgPass" type="password" placeholder="••••••••" autocomplete="off">
+        <button class="eye-btn" id="eyeBtn" onclick="toggleEye()" title="Show/hide">👁</button>
+      </div>
       <div class="fl" id="lblJar">JAR file path (in container)</div>
       <input class="fi" id="cfgJar" placeholder="/app/drivers/servicenow-jdbc-driver.jar" value="/app/drivers/servicenow-jdbc-driver.jar">
       <div class="cfg-hint" id="hintSnippets">Code snippets update live ↑</div>
+    </div>
+
+    <!-- .env download panel -->
+    <div class="env-panel">
+      <div class="env-panel-hdr">
+        <div class="env-panel-title">⬇ <span id="envPanelTitle">.env file</span></div>
+        <button class="env-dl-btn" id="sidebarDlBtn" onclick="downloadEnv()">
+          <span id="sidebarDlLabel">download .env</span>
+        </button>
+      </div>
+      <div class="env-preview" id="envPreview"></div>
     </div>
   </nav>
   <main class="main" id="mainContent"></main>
@@ -179,8 +215,15 @@ const TRANSLATIONS = {
     lblInstance: 'Instance name',
     hintInstance: '→ mycompany.service-now.com',
     lblUser: 'Service account username',
+    lblPass: 'Password',
     lblJar: 'JAR file path (in container)',
     hintSnippets: 'Code snippets update live ↑',
+    envPanelTitle: '.env file',
+    sidebarDlLabel: 'download .env',
+    envDlLabel: 'download .env',
+    envCopyLabel: 'copy',
+    envNoPass: '# ← enter password in sidebar',
+    envSecNote: '⚠  Never commit this file. Add .env to .gitignore.',
     copy: 'copy', copied: '✓ copied',
     back: '← Back', next: 'Next step →', complete: '✓ Complete', restart: '↺ Start over',
     steps: [
@@ -249,6 +292,9 @@ const TRANSLATIONS = {
       stepNum: 'Step 06', title: 'Build & run the container',
       desc: 'Pass credentials as environment variables at <ic>docker run</ic> time. Never bake them into the image or your code.',
       divBuild: 'build', divRun: 'run', divCompose: 'using docker-compose',
+      divEnv: '.env file — alternative to inline flags',
+      envDesc: 'Create a <ic>.env</ic> file and pass it to Docker instead of repeating <ic>-e</ic> flags on every run. Fill in the password in the config panel on the left and click <strong>download .env</strong>.',
+      envRunCmd: '# Load from .env file instead of -e flags',
       info: '<strong>Production tip:</strong> Use Docker secrets, AWS Secrets Manager, or a Vault integration instead of plain <ic>-e</ic> flags. The <ic>-e</ic> approach is fine for local dev but exposes the password in <ic>docker inspect</ic> output.',
       cmtCompose: '# read from host environment',
     },
@@ -323,8 +369,15 @@ Then update <ic>DRIVER_CLASS</ic> in <ic>connection.py</ic> to match.`
     lblInstance: 'Nome da instância',
     hintInstance: '→ minhaempresa.service-now.com',
     lblUser: 'Usuário da conta de serviço',
+    lblPass: 'Senha',
     lblJar: 'Caminho do JAR (no container)',
     hintSnippets: 'Os snippets de código atualizam ao vivo ↑',
+    envPanelTitle: 'arquivo .env',
+    sidebarDlLabel: 'baixar .env',
+    envDlLabel: 'baixar .env',
+    envCopyLabel: 'copiar',
+    envNoPass: '# ← insira a senha no painel lateral',
+    envSecNote: '⚠  Nunca faça commit deste arquivo. Adicione .env ao .gitignore.',
     copy: 'copiar', copied: '✓ copiado',
     back: '← Voltar', next: 'Próxima etapa →', complete: '✓ Concluir', restart: '↺ Recomeçar',
     steps: [
@@ -393,6 +446,9 @@ Then update <ic>DRIVER_CLASS</ic> in <ic>connection.py</ic> to match.`
       stepNum: 'Etapa 06', title: 'Build e execução do container',
       desc: 'Passe as credenciais como variáveis de ambiente no momento do <ic>docker run</ic>. Nunca as inclua na imagem ou no código.',
       divBuild: 'build', divRun: 'executar', divCompose: 'usando docker-compose',
+      divEnv: 'arquivo .env — alternativa às flags inline',
+      envDesc: 'Crie um arquivo <ic>.env</ic> e passe-o ao Docker em vez de repetir as flags <ic>-e</ic> a cada execução. Preencha a senha no painel de configuração à esquerda e clique em <strong>baixar .env</strong>.',
+      envRunCmd: '# Carrega do arquivo .env em vez de flags -e',
       info: '<strong>Dica para produção:</strong> Use Docker secrets, AWS Secrets Manager ou Vault em vez de flags <ic>-e</ic> simples. O modo <ic>-e</ic> é adequado para desenvolvimento local, mas expõe a senha na saída do <ic>docker inspect</ic>.',
       cmtCompose: '# lido do ambiente do host',
     },
@@ -475,15 +531,20 @@ function setLang(l) {
   document.getElementById('lblInstance').textContent  = T().lblInstance;
   document.getElementById('hintInstance').textContent = T().hintInstance;
   document.getElementById('lblUser').textContent      = T().lblUser;
+  document.getElementById('lblPass').textContent      = T().lblPass;
   document.getElementById('lblJar').textContent       = T().lblJar;
   document.getElementById('hintSnippets').textContent = T().hintSnippets;
+  document.getElementById('envPanelTitle').textContent  = T().envPanelTitle;
+  document.getElementById('sidebarDlLabel').textContent = T().sidebarDlLabel;
+  updateEnvPreview();
   render();
 }
 
 // ── Config ───────────────────────────────────────────────
-const cfg = { instance: 'mycompany', user: 'svc_jdbc_account', jar: '/app/drivers/servicenow-jdbc-driver.jar' };
-document.getElementById('cfgInstance').addEventListener('input', e => { cfg.instance = e.target.value || 'myinstance'; updateTpl(); });
-document.getElementById('cfgUser').addEventListener('input',     e => { cfg.user     = e.target.value || 'svc_jdbc';   updateTpl(); });
+const cfg = { instance: 'mycompany', user: 'svc_jdbc_account', pass: '', jar: '/app/drivers/servicenow-jdbc-driver.jar' };
+document.getElementById('cfgInstance').addEventListener('input', e => { cfg.instance = e.target.value || 'myinstance'; updateTpl(); updateEnvPreview(); });
+document.getElementById('cfgUser').addEventListener('input',     e => { cfg.user     = e.target.value || 'svc_jdbc';   updateTpl(); updateEnvPreview(); });
+document.getElementById('cfgPass').addEventListener('input',     e => { cfg.pass     = e.target.value;                 updateEnvPreview(); });
 document.getElementById('cfgJar').addEventListener('input',      e => { cfg.jar      = e.target.value || '/app/drivers/servicenow-jdbc-driver.jar'; updateTpl(); });
 
 function updateTpl() {
@@ -680,15 +741,31 @@ function buildRun() {
   <span class="str">sn-jdbc-app</span></div>
 </div>
 <div class="alert a-info"><span class="ai">ℹ</span><span>${t.info}</span></div>
+<div class="sdiv">${t.divEnv}</div>
+<p>${t.envDesc}</p>
+<div class="env-card">
+  <div class="env-card-hdr">
+    <div class="env-card-title">⬇ .env</div>
+    <div class="env-card-actions">
+      <button class="copy-btn" id="envCopyBtn" onclick="copyEnv(this)">${T().envCopyLabel}</button>
+      <button class="env-dl-btn" id="envMainDlBtn" onclick="downloadEnv('envMainDlBtn')">${T().envDlLabel}</button>
+    </div>
+  </div>
+  <div class="env-card-body" id="envCardBody">SN_USER=...\nSN_PASS=...</div>
+  <div class="env-security-note">${T().envSecNote}</div>
+</div>
+<div class="cw">
+  <div class="ch"><span class="clang">bash</span><button class="copy-btn" onclick="copyCode(this)">${T().copy}</button></div>
+  <div class="cb"><span class="cmt">${t.envRunCmd}</span>
+docker run --env-file .env <span class="str">sn-jdbc-app</span></div>
+</div>
 <div class="sdiv">${t.divCompose}</div>
 <div class="cw">
   <div class="ch"><span class="cfile">docker-compose.yml</span><button class="copy-btn" onclick="copyCode(this)">${T().copy}</button></div>
   <div class="cb"><span class="kw">services</span>:
   <span class="kw">app</span>:
     <span class="kw">build</span>: .
-    <span class="kw">environment</span>:
-      - <span class="var">SN_USER</span>=<span class="tpl"><span data-tpl="user">svc_jdbc_account</span></span>
-      - <span class="var">SN_PASS</span>=<span class="str">${'$'}{SN_PASS}</span>   <span class="cmt">${t.cmtCompose}</span></div>
+    <span class="kw">env_file</span>: .env   <span class="cmt">${t.cmtCompose}</span></div>
 </div>`;
 }
 
@@ -764,6 +841,66 @@ ${t.issues.map(issue => `
 
 const CONTENT = [buildPrereqs, buildStructure, buildDockerfile, buildReqs, buildConnection, buildRun, buildVerify, buildTrouble];
 
+// ── .env helpers ────────────────────────────────────────
+function envContent() {
+  const passVal = cfg.pass ? cfg.pass : T().envNoPass;
+  return `SN_USER=${cfg.user}\nSN_PASS=${passVal}\n`;
+}
+
+function updateEnvPreview() {
+  const el = document.getElementById('envPreview');
+  if (!el) return;
+  const passVal = cfg.pass
+    ? cfg.pass.replace(/./g, '•')
+    : T().envNoPass;
+  el.innerHTML =
+    `<span style="color:var(--var)">SN_USER</span>=<span style="color:var(--str)">${escHtml(cfg.user)}</span>\n` +
+    `<span style="color:var(--var)">SN_PASS</span>=<span style="color:var(--str)">${escHtml(passVal)}</span>`;
+  // Also refresh env card in main if visible
+  const card = document.getElementById('envCardBody');
+  if (card) {
+    const passDisplay = cfg.pass
+      ? `<span style="color:var(--str)">${escHtml(cfg.pass.replace(/./g, '•'))}</span>`
+      : `<span style="color:var(--ts)">${escHtml(T().envNoPass)}</span>`;
+    card.innerHTML =
+      `<span style="color:var(--var)">SN_USER</span>=<span style="color:var(--str)">${escHtml(cfg.user)}</span>\n` +
+      `<span style="color:var(--var)">SN_PASS</span>=${passDisplay}`;
+  }
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function downloadEnv(btnId) {
+  const content = envContent();
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([content], {type: 'text/plain'}));
+  a.download = '.env';
+  a.click();
+  URL.revokeObjectURL(a.href);
+  if (btnId) {
+    const btn = document.getElementById(btnId);
+    if (btn) {
+      const orig = btn.innerHTML;
+      btn.innerHTML = '✓ ' + T().copied.replace('✓ ','');
+      btn.classList.add('ok');
+      setTimeout(() => { btn.innerHTML = orig; btn.classList.remove('ok'); }, 2000);
+    }
+  }
+  // Also flash sidebar button
+  const sb = document.getElementById('sidebarDlBtn');
+  if (sb) {
+    sb.classList.add('ok');
+    setTimeout(() => sb.classList.remove('ok'), 2000);
+  }
+}
+
+function toggleEye() {
+  const inp = document.getElementById('cfgPass');
+  inp.type = inp.type === 'password' ? 'text' : 'password';
+}
+
 // ── Render ───────────────────────────────────────────────
 function render() {
   const steps = T().steps;
@@ -792,6 +929,7 @@ function render() {
   }
 
   updateTpl();
+  updateEnvPreview();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -808,6 +946,15 @@ function copyCode(btn) {
   });
 }
 
+function copyEnv(btn) {
+  navigator.clipboard.writeText(envContent()).then(() => {
+    const orig = btn.textContent;
+    btn.textContent = T().copied;
+    btn.classList.add('ok');
+    setTimeout(() => { btn.textContent = T().envCopyLabel; btn.classList.remove('ok'); }, 2000);
+  });
+}
+
 function toggleCheck(el) {
   el.classList.toggle('checked');
   const c = document.getElementById('ckcount');
@@ -817,6 +964,7 @@ function toggleCheck(el) {
 function toggleIssue(el) { el.classList.toggle('open'); }
 
 render();
+updateEnvPreview();
 </script>
 </body>
 </html>
