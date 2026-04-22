@@ -8,6 +8,7 @@
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <link rel="icon" type="image/x-icon" href="favicon.ico">
 <link rel="apple-touch-icon" sizes="192x192" href="favicon-192.png">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -118,6 +119,107 @@ ic{font-family:var(--mono);font-size:12px;background:var(--sf2);border:1px solid
 .env-card-actions{display:flex;gap:8px}
 .env-card-body{padding:16px 18px;font-family:var(--mono);font-size:13px;line-height:2;white-space:pre;overflow-x:auto;background:#010409;color:#e6edf3}
 .env-security-note{display:flex;gap:10px;padding:10px 14px;background:rgba(227,179,65,.05);border-top:1px solid rgba(227,179,65,.15);font-size:11px;color:var(--ts);line-height:1.5;font-family:var(--mono)}
+/* ── Query Runner ── */
+.qr-layout{display:grid;grid-template-columns:190px 1fr;gap:20px;margin-bottom:24px}
+.qr-templates{display:flex;flex-direction:column;gap:6px}
+.qr-tpl-label{font-size:10px;font-family:var(--mono);color:var(--ts);text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px}
+.tpl-btn{font-family:var(--mono);font-size:12px;background:var(--sf);border:1px solid var(--bd);border-radius:5px;color:var(--tm);padding:7px 10px;cursor:pointer;text-align:left;transition:all .15s;white-space:nowrap}
+.tpl-btn:hover{background:var(--sf2);color:var(--tx);border-color:var(--ac)}
+.tpl-btn.active{background:var(--ac-dim);border-color:var(--ac);color:var(--ac)}
+.qr-editor-wrap{display:flex;flex-direction:column;border:1px solid var(--bd);border-radius:8px;overflow:hidden}
+.qr-editor-hdr{background:var(--sf2);padding:7px 14px;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between}
+.qr-editor-title{font-family:var(--mono);font-size:11px;color:var(--ts)}
+.qr-sql{width:100%;background:#010409;color:#e6edf3;font-family:var(--mono);font-size:13px;line-height:1.7;padding:16px 18px;border:none;outline:none;resize:vertical;min-height:140px;tab-size:2}
+.qr-sql::placeholder{color:var(--ts)}
+.qr-editor-footer{background:var(--sf2);padding:7px 14px;border-top:1px solid var(--bd);display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.qr-fmt-label{font-family:var(--mono);font-size:11px;color:var(--ts);margin-right:4px}
+.fmt-tab{font-family:var(--mono);font-size:11px;background:none;border:1px solid var(--bd);border-radius:4px;color:var(--ts);padding:3px 10px;cursor:pointer;transition:all .15s}
+.fmt-tab:hover{background:var(--sf);color:var(--tm)}
+.fmt-tab.active{background:var(--ac-dim);border-color:var(--ac);color:var(--ac)}
+.qr-out-wrap{margin-bottom:24px}
+.qr-out-hdr{display:flex;align-items:center;justify-content:space-between;background:var(--sf2);padding:7px 14px;border:1px solid var(--bd);border-bottom:none;border-radius:8px 8px 0 0}
+.qr-out-title{font-family:var(--mono);font-size:11px;color:var(--ts)}
+.qr-out-body{background:#010409;padding:16px 18px;font-family:var(--mono);font-size:13px;line-height:1.8;color:#e6edf3;overflow-x:auto;white-space:pre;border:1px solid var(--bd);border-top:none;border-radius:0 0 8px 8px;min-height:80px}
+.table-ref{margin-top:4px}
+.tref-row{border:1px solid var(--bd);border-radius:6px;margin-bottom:6px;overflow:hidden}
+.tref-hdr{display:flex;align-items:center;justify-content:space-between;padding:9px 14px;cursor:pointer;background:var(--sf);transition:background .15s;gap:12px}
+.tref-hdr:hover{background:var(--sf2)}
+.tref-name{font-family:var(--mono);font-size:12px;color:var(--blue);flex-shrink:0}
+.tref-desc{font-size:12px;color:var(--ts);text-align:right}
+.tref-body{display:none;padding:12px 14px;background:var(--bg);border-top:1px solid var(--bd)}
+.tref-row.open .tref-body{display:block}
+.col-pill{display:inline-block;font-family:var(--mono);font-size:11px;background:var(--sf2);border:1px solid var(--bd);border-radius:4px;padding:2px 8px;margin:3px 4px 3px 0;color:var(--blue);cursor:pointer;transition:all .15s}
+.col-pill:hover{border-color:var(--ac);color:var(--ac);background:var(--ac-dim)}
+.col-pill-hint{font-size:11px;color:var(--ts);margin-top:8px}
+@media(max-width:768px){.qr-layout{grid-template-columns:1fr}}
+/* ── ZIP download ── */
+.zip-panel{margin:0 16px 16px;border:1px solid var(--ac);border-radius:8px;overflow:hidden}
+.zip-panel-hdr{background:var(--ac-dim);padding:10px 12px;display:flex;align-items:center;justify-content:space-between}
+.zip-panel-title{font-family:var(--mono);font-size:11px;color:var(--ac);display:flex;align-items:center;gap:6px}
+.zip-dl-btn{font-family:var(--mono);font-size:11px;background:var(--ac);border:1px solid var(--ac);border-radius:4px;color:#0d1117;padding:4px 12px;cursor:pointer;font-weight:600;transition:all .15s;display:flex;align-items:center;gap:5px}
+.zip-dl-btn:hover{background:#56d364;border-color:#56d364}
+.zip-dl-btn:disabled{opacity:.5;cursor:not-allowed}
+.zip-preview{background:#010409;padding:10px 14px;font-family:var(--mono);font-size:11px;line-height:1.8;color:var(--ts)}
+.zip-file{color:var(--amber)}
+.zip-file.filled{color:var(--ac)}
+/* ── Progress persistence badge ── */
+.persist-badge{font-family:var(--mono);font-size:10px;color:var(--ts);padding:0 8px;display:flex;align-items:center;gap:5px;flex-shrink:0}
+.persist-dot{width:6px;height:6px;border-radius:50%;background:var(--ts);transition:background .3s}
+.persist-dot.saved{background:var(--ac)}
+/* ── Toast ── */
+.toast{position:fixed;bottom:24px;right:24px;background:var(--sf2);border:1px solid var(--ac);border-radius:8px;padding:10px 18px;font-family:var(--mono);font-size:12px;color:var(--ac);z-index:999;opacity:0;transform:translateY(8px);transition:all .25s;pointer-events:none}
+.toast.show{opacity:1;transform:translateY(0)}
+/* ── Table search ── */
+.tref-search{width:100%;background:var(--bg);border:1px solid var(--bd);border-radius:6px;padding:7px 12px;color:var(--tx);font-family:var(--mono);font-size:12px;margin-bottom:12px;outline:none;transition:border-color .15s}
+.tref-search:focus{border-color:var(--ac)}
+.tref-search::placeholder{color:var(--ts)}
+.tref-row.hidden{display:none}
+/* ── Mobile drawer ── */
+.mob-menu-btn{display:none;background:none;border:1px solid var(--bd);border-radius:6px;color:var(--tm);font-size:16px;padding:4px 9px;cursor:pointer;line-height:1;transition:all .15s}
+.mob-menu-btn:hover{background:var(--sf2);color:var(--tx)}
+.drawer-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:200;backdrop-filter:blur(2px)}
+.drawer-overlay.open{display:block}
+.sidebar{border-right:1px solid var(--bd);padding:20px 0;position:sticky;top:93px;height:calc(100vh - 93px);overflow-y:auto;display:flex;flex-direction:column;gap:0;transition:transform .25s ease}
+/* ── Keyboard shortcut button & modal ── */
+.kbd-btn{font-family:var(--mono);font-size:11px;background:none;border:1px solid var(--bd);border-radius:5px;color:var(--ts);padding:4px 8px;cursor:pointer;transition:all .15s;flex-shrink:0}
+.kbd-btn:hover{background:var(--sf2);color:var(--tm)}
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:300;align-items:center;justify-content:center;backdrop-filter:blur(2px)}
+.modal-overlay.open{display:flex}
+.modal-box{background:var(--sf);border:1px solid var(--bd);border-radius:12px;padding:24px 28px;min-width:320px;max-width:440px;width:90%}
+.modal-title{font-size:15px;font-weight:500;color:var(--tx);margin-bottom:20px;display:flex;align-items:center;justify-content:space-between}
+.modal-close{background:none;border:none;color:var(--ts);cursor:pointer;font-size:18px;padding:0;line-height:1;transition:color .15s}
+.modal-close:hover{color:var(--tx)}
+.kbd-row{display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--bd);font-size:13px}
+.kbd-row:last-child{border-bottom:none}
+.kbd-desc{color:var(--tm)}
+.kbd-keys{display:flex;gap:4px}
+kbd{font-family:var(--mono);font-size:11px;background:var(--sf2);border:1px solid var(--bd);border-radius:4px;padding:2px 7px;color:var(--tx)}
+/* ── Saved queries ── */
+.sq-divider{font-size:10px;font-family:var(--mono);color:var(--ts);text-transform:uppercase;letter-spacing:.1em;margin:10px 0 6px;padding-top:10px;border-top:1px solid var(--bd)}
+.sq-item{display:flex;align-items:center;gap:0;border:1px solid var(--bd);border-radius:5px;overflow:hidden;margin-bottom:5px}
+.sq-load{flex:1;font-family:var(--mono);font-size:12px;background:var(--sf);border:none;color:var(--tm);padding:6px 10px;cursor:pointer;text-align:left;transition:background .15s;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sq-load:hover{background:var(--sf2);color:var(--tx)}
+.sq-del{background:none;border:none;border-left:1px solid var(--bd);color:var(--ts);cursor:pointer;padding:6px 9px;font-size:12px;transition:all .15s;flex-shrink:0}
+.sq-del:hover{background:var(--sf2);color:var(--red)}
+.sq-empty{font-family:var(--mono);font-size:11px;color:var(--ts);padding:6px 0}
+/* ── Save-query inline prompt ── */
+.sq-prompt{display:none;flex-direction:column;gap:6px;margin-top:8px;padding:10px;background:var(--sf2);border:1px solid var(--bd);border-radius:6px}
+.sq-prompt.open{display:flex}
+.sq-prompt-row{display:flex;gap:6px}
+.sq-name-input{flex:1;background:var(--bg);border:1px solid var(--bd);border-radius:4px;padding:5px 8px;color:var(--tx);font-family:var(--mono);font-size:12px;outline:none;transition:border-color .15s}
+.sq-name-input:focus{border-color:var(--ac)}
+.sq-save-confirm{font-family:var(--mono);font-size:11px;background:var(--ac);border:1px solid var(--ac);border-radius:4px;color:#0d1117;padding:5px 12px;cursor:pointer;font-weight:600;transition:all .15s}
+.sq-save-confirm:hover{background:#56d364}
+.sq-cancel{font-family:var(--mono);font-size:11px;background:none;border:1px solid var(--bd);border-radius:4px;color:var(--ts);padding:5px 10px;cursor:pointer;transition:all .15s}
+.sq-cancel:hover{background:var(--sf);color:var(--tm)}
+@media(max-width:768px){
+  .layout{grid-template-columns:1fr}
+  .sidebar{display:flex;position:fixed;left:0;top:0;height:100vh;width:280px;background:var(--bg);z-index:210;transform:translateX(-100%);border-right:1px solid var(--bd)}
+  .sidebar.drawer-open{transform:translateX(0)}
+  .main{padding:20px 16px}
+  .header-title{display:none}
+  .mob-menu-btn{display:block}
+}
 .navbtns{display:flex;justify-content:space-between;align-items:center;margin-top:40px;padding-top:24px;border-top:1px solid var(--bd)}
 .btn{font-family:var(--sans);font-size:13px;font-weight:500;padding:9px 20px;border-radius:6px;cursor:pointer;transition:all .15s;display:flex;align-items:center;gap:8px;border:1px solid var(--bd);background:none;color:var(--tm)}
 .btn:hover{background:var(--sf2);color:var(--tx)}
@@ -147,6 +249,7 @@ strong{color:var(--tx);font-weight:500}
 <body>
 
 <div class="header">
+  <button class="mob-menu-btn" id="mobMenuBtn" onclick="openDrawer()" aria-label="Menu">☰</button>
   <div class="logo">
     <div class="logo-box">⚙</div>
     <span>sn-jdbc-setup</span>
@@ -159,7 +262,27 @@ strong{color:var(--tx);font-weight:500}
     <div class="lang-sep"></div>
     <button class="lang-btn" id="btnPT" onclick="setLang('pt')"><span class="flag">🇧🇷</span> PT-BR</button>
   </div>
+  <button class="kbd-btn" id="kbdBtn" onclick="openKbdModal()" title="Keyboard shortcuts">⌨ ?</button>
+  <div class="persist-badge" title="Progress auto-saved">
+    <div class="persist-dot" id="persistDot"></div>
+    <span id="persistLabel">saved</span>
+  </div>
 </div>
+<div class="toast" id="toast"></div>
+
+<!-- Keyboard shortcuts modal -->
+<div class="modal-overlay" id="kbdModal" onclick="closeKbdModal(event)">
+  <div class="modal-box">
+    <div class="modal-title">
+      <span id="kbdModalTitle">Keyboard shortcuts</span>
+      <button class="modal-close" onclick="closeKbdModal()">×</button>
+    </div>
+    <div id="kbdModalBody"></div>
+  </div>
+</div>
+
+<!-- Mobile drawer overlay -->
+<div class="drawer-overlay" id="drawerOverlay" onclick="closeDrawer()"></div>
 
 <div class="prog-bar">
   <div class="prog-steps" id="progSteps"></div>
@@ -199,6 +322,17 @@ strong{color:var(--tx);font-weight:500}
       </div>
       <div class="env-preview" id="envPreview"></div>
     </div>
+
+    <!-- Project ZIP panel -->
+    <div class="zip-panel">
+      <div class="zip-panel-hdr">
+        <div class="zip-panel-title">⬇ <span id="zipPanelTitle">Download project</span></div>
+        <button class="zip-dl-btn" id="zipDlBtn" onclick="downloadZip()">
+          <span id="zipDlLabel">project.zip</span>
+        </button>
+      </div>
+      <div class="zip-preview" id="zipPreview"></div>
+    </div>
   </nav>
   <main class="main" id="mainContent"></main>
 </div>
@@ -224,6 +358,27 @@ const TRANSLATIONS = {
     envCopyLabel: 'copy',
     envNoPass: '# ← enter password in sidebar',
     envSecNote: '⚠  Never commit this file. Add .env to .gitignore.',
+    zipPanelTitle: 'Download project',
+    zipDlLabel: 'project.zip',
+    zipToast: '✓ project.zip downloaded',
+    persistLabel: 'saved',
+    trefSearchPlaceholder: 'Search tables or columns…',
+    kbdModalTitle: 'Keyboard shortcuts',
+    kbdShortcuts: [
+      { keys: ['→', ']'],        desc: 'Next step' },
+      { keys: ['←', '['],        desc: 'Previous step' },
+      { keys: ['1–9'],           desc: 'Jump to step N' },
+      { keys: ['?'],             desc: 'Show this panel' },
+      { keys: ['Esc'],           desc: 'Close modal / drawer' },
+    ],
+    sqLabel: 'Saved queries',
+    sqEmpty: 'No saved queries yet',
+    sqSaveBtn: '☆ Save',
+    sqSavePlaceholder: 'Query name…',
+    sqConfirm: 'Save',
+    sqCancel: 'Cancel',
+    sqToastSaved: '✓ Query saved',
+    sqToastDeleted: 'Query deleted',
     copy: 'copy', copied: '✓ copied',
     back: '← Back', next: 'Next step →', complete: '✓ Complete', restart: '↺ Start over',
     steps: [
@@ -235,7 +390,43 @@ const TRANSLATIONS = {
       { title: 'Build & run',       short: 'Run'       },
       { title: 'Verify & test',     short: 'Verify'    },
       { title: 'Troubleshooting',   short: 'Debug'     },
+      { title: 'Query runner',      short: 'Queries'   },
     ],
+    queryRunner: {
+      stepNum: 'Step 09',
+      title: 'Query runner',
+      desc: 'Write a SELECT, pick an output format, and copy the ready-to-run command. The generated code uses the connection.py helper from Step 05.',
+      tplLabel: 'Templates',
+      fmtLabel: 'Output as',
+      fmtScript: 'query.py script',
+      fmtOneliner: 'docker one-liner',
+      fmtExec: 'docker exec',
+      fmtPandas: 'pandas DataFrame',
+      outTitle: 'Generated code',
+      refTitle: 'ServiceNow table reference',
+      refHint: 'Click a column name to add it to the SELECT.',
+      copyOut: 'copy',
+      searchPlaceholder: 'Search tables or columns…',
+      templates: [
+        { label: 'incident',        sql: 'SELECT number, short_description, state, priority\nFROM incident\nWHERE state != \'7\'\nLIMIT 20' },
+        { label: 'sys_user',        sql: 'SELECT user_name, first_name, last_name, email, active\nFROM sys_user\nWHERE active = true\nLIMIT 20' },
+        { label: 'cmdb_ci',         sql: 'SELECT name, sys_class_name, serial_number, ip_address\nFROM cmdb_ci\nWHERE install_status = \'1\'\nLIMIT 20' },
+        { label: 'change_request',  sql: 'SELECT number, short_description, state, type\nFROM change_request\nWHERE state NOT IN (\'3\',\'4\')\nLIMIT 20' },
+        { label: 'problem',         sql: 'SELECT number, short_description, state, priority\nFROM problem\nWHERE state != \'107\'\nLIMIT 20' },
+        { label: 'sc_request',      sql: 'SELECT number, short_description, state, requested_for\nFROM sc_request\nWHERE active = true\nLIMIT 20' },
+        { label: 'task',            sql: 'SELECT number, short_description, state, assigned_to\nFROM task\nLIMIT 20' },
+      ],
+      tables: [
+        { name: 'incident',       desc: 'IT incidents',       cols: ['number','short_description','description','state','priority','urgency','impact','category','assigned_to','assignment_group','sys_created_on','resolved_at'] },
+        { name: 'sys_user',       desc: 'Users & accounts',   cols: ['user_name','first_name','last_name','email','active','department','manager','phone','mobile_phone','sys_created_on'] },
+        { name: 'cmdb_ci',        desc: 'Configuration items',cols: ['name','sys_class_name','serial_number','ip_address','mac_address','install_status','operational_status','support_group','location','sys_updated_on'] },
+        { name: 'change_request', desc: 'Change management',  cols: ['number','short_description','state','type','risk','impact','start_date','end_date','assigned_to','assignment_group'] },
+        { name: 'problem',        desc: 'Problem management', cols: ['number','short_description','state','priority','known_error','assigned_to','sys_created_on'] },
+        { name: 'sc_request',     desc: 'Service catalog',    cols: ['number','short_description','state','requested_for','opened_at','closed_at','price'] },
+        { name: 'task',           desc: 'Base task table',    cols: ['number','short_description','state','priority','assigned_to','assignment_group','sys_created_on','sys_updated_on'] },
+        { name: 'sys_user_role',  desc: 'Roles',              cols: ['name','description','elevated_privilege','sys_created_on'] },
+      ],
+    },
     prereqs: {
       stepNum: 'Step 01',
       title: 'Prerequisites checklist',
@@ -299,21 +490,38 @@ const TRANSLATIONS = {
       cmtCompose: '# read from host environment',
     },
     verify: {
-      stepNum: 'Step 07', title: 'Verify the driver class & test the connection',
-      desc: 'Before running your app, confirm the exact driver class name from the JAR and validate the connection with a simple query.',
-      div1: '1 — confirm the driver class name',
-      p1: 'The driver class string passed to <ic>jaydebeapi.connect()</ic> must match exactly what is compiled into the JAR. Run this inside a running container:',
-      langShell: 'bash — inside container',
-      cmtShell1: '# Start a shell in the image',
-      cmtShell2: '# List contents of the JAR and filter for Driver classes',
+      stepNum: 'Step 07', title: 'Verify & test the connection',
+      desc: 'Run your first query against the live instance. Each section below is a self-contained command you can copy and paste.',
+      prereqBox: '<strong>Before you start:</strong> the image must be built (<ic>docker build -t sn-jdbc-app .</ic> completed without errors) and your <ic>.env</ic> file must exist with real credentials. You do <strong>not</strong> need to keep a container running — every command below spins up a throwaway container, runs, and exits automatically.',
+      div0: '1 — confirm the driver class name',
+      p0: 'Open a one-off interactive shell inside the image. This does not start a server — it just gives you a prompt:',
+      langShell: 'bash — run on your host machine',
+      cmtShell1: '# Spin up a temporary container with a shell (exits when you type "exit")',
+      cmtJar: '# Inside the container shell: inspect the JAR',
+      cmtExit: '# When done',
       langExpected: 'expected output',
-      cmt1: '# You should see something like:',
-      cmt2: '# Translate path → class name: replace / with . and drop .class',
+      cmt1: '# You should see a line like:',
+      cmt2: '# Convert path → class name: replace "/" with "." and drop ".class"',
       cmt3: '# com/servicenow/jdbc/Driver.class  →  "com.servicenow.jdbc.Driver"',
-      warn: 'If the output shows a different path (e.g. <ic>com/service_now/jdbc/Driver.class</ic>), update <ic>DRIVER_CLASS</ic> in <ic>connection.py</ic> accordingly.',
-      div2: '2 — run a test query',
-      cmtExpected: '# If the connection is healthy you will see dicts like:',
-      ok: 'If rows appear, your setup is complete. The JDBC driver is loaded, the JVM started, and the ServiceNow SQL API accepted the connection.',
+      warn: 'If the output shows a different path (e.g. <ic>com/service_now/jdbc/Driver.class</ic>), update <ic>DRIVER_CLASS</ic> in <ic>connection.py</ic> to match before continuing.',
+      div1: '2 — run the test query (first time)',
+      p1: 'Run <ic>query.py</ic> directly from your host — no need to enter the container. The <ic>--rm</ic> flag removes the container automatically after it exits:',
+      langRun: 'bash — run on your host machine',
+      cmtRun: '# One command: creates container → runs query.py → prints results → removes container',
+      flagNote: '<ic>--rm</ic> removes the container after exit. <ic>--env-file .env</ic> injects your credentials. Nothing persists.',
+      cmtExpected: '# Healthy output looks like:',
+      ok: 'Rows printed. The JDBC driver loaded correctly, the JVM started, and the ServiceNow SQL API accepted the connection.',
+      div2: '3 — change the query and re-run without rebuilding',
+      p2: 'Mount <ic>query.py</ic> from your host as a volume. Docker uses your local file directly — edit it, save, run the command again. No <ic>docker build</ic> needed.',
+      langVol: 'bash — run on your host machine',
+      cmtVol: '# -v mounts your local query.py over the one baked into the image',
+      volNote: 'Edit <ic>query.py</ic> in any editor, save the file, then run the same command again. The container always reads the current version from disk.',
+      winNote: '<strong>Windows cmd:</strong> replace <ic>$(pwd)</ic> with <ic>%cd%</ic>. <strong>PowerShell:</strong> use <ic>${PWD}</ic>.',
+      div3: 'optional — run_query.sh convenience wrapper',
+      p3: 'Save this script once so you only type <ic>./run_query.sh</ic> to re-run:',
+      cmtScript1: '#!/bin/bash',
+      cmtScript2: '# Run from the project root. Edits to query.py take effect immediately.',
+      chmodNote: 'Make it executable once: <ic>chmod +x run_query.sh</ic>',
     },
     trouble: {
       stepNum: 'Step 08', title: 'Troubleshooting',
@@ -378,6 +586,27 @@ Then update <ic>DRIVER_CLASS</ic> in <ic>connection.py</ic> to match.`
     envCopyLabel: 'copiar',
     envNoPass: '# ← insira a senha no painel lateral',
     envSecNote: '⚠  Nunca faça commit deste arquivo. Adicione .env ao .gitignore.',
+    zipPanelTitle: 'Baixar projeto',
+    zipDlLabel: 'projeto.zip',
+    zipToast: '✓ projeto.zip baixado',
+    persistLabel: 'salvo',
+    trefSearchPlaceholder: 'Buscar tabelas ou colunas…',
+    kbdModalTitle: 'Atalhos de teclado',
+    kbdShortcuts: [
+      { keys: ['→', ']'],        desc: 'Próxima etapa' },
+      { keys: ['←', '['],        desc: 'Etapa anterior' },
+      { keys: ['1–9'],           desc: 'Ir para a etapa N' },
+      { keys: ['?'],             desc: 'Mostrar este painel' },
+      { keys: ['Esc'],           desc: 'Fechar modal / menu' },
+    ],
+    sqLabel: 'Queries salvas',
+    sqEmpty: 'Nenhuma query salva ainda',
+    sqSaveBtn: '☆ Salvar',
+    sqSavePlaceholder: 'Nome da query…',
+    sqConfirm: 'Salvar',
+    sqCancel: 'Cancelar',
+    sqToastSaved: '✓ Query salva',
+    sqToastDeleted: 'Query excluída',
     copy: 'copiar', copied: '✓ copiado',
     back: '← Voltar', next: 'Próxima etapa →', complete: '✓ Concluir', restart: '↺ Recomeçar',
     steps: [
@@ -389,7 +618,43 @@ Then update <ic>DRIVER_CLASS</ic> in <ic>connection.py</ic> to match.`
       { title: 'Build & execução',    short: 'Executar'  },
       { title: 'Verificar & testar',  short: 'Verificar' },
       { title: 'Solução de problemas', short: 'Debug'    },
+      { title: 'Query runner',         short: 'Queries'  },
     ],
+    queryRunner: {
+      stepNum: 'Etapa 09',
+      title: 'Query runner',
+      desc: 'Escreva um SELECT, escolha o formato de saída e copie o comando pronto para executar. O código gerado usa o helper connection.py da Etapa 05.',
+      tplLabel: 'Templates',
+      fmtLabel: 'Gerar como',
+      fmtScript: 'script query.py',
+      fmtOneliner: 'docker one-liner',
+      fmtExec: 'docker exec',
+      fmtPandas: 'pandas DataFrame',
+      outTitle: 'Código gerado',
+      refTitle: 'Referência de tabelas ServiceNow',
+      refHint: 'Clique no nome de uma coluna para adicioná-la ao SELECT.',
+      copyOut: 'copiar',
+      searchPlaceholder: 'Buscar tabelas ou colunas…',
+      templates: [
+        { label: 'incident',        sql: 'SELECT number, short_description, state, priority\nFROM incident\nWHERE state != \'7\'\nLIMIT 20' },
+        { label: 'sys_user',        sql: 'SELECT user_name, first_name, last_name, email, active\nFROM sys_user\nWHERE active = true\nLIMIT 20' },
+        { label: 'cmdb_ci',         sql: 'SELECT name, sys_class_name, serial_number, ip_address\nFROM cmdb_ci\nWHERE install_status = \'1\'\nLIMIT 20' },
+        { label: 'change_request',  sql: 'SELECT number, short_description, state, type\nFROM change_request\nWHERE state NOT IN (\'3\',\'4\')\nLIMIT 20' },
+        { label: 'problem',         sql: 'SELECT number, short_description, state, priority\nFROM problem\nWHERE state != \'107\'\nLIMIT 20' },
+        { label: 'sc_request',      sql: 'SELECT number, short_description, state, requested_for\nFROM sc_request\nWHERE active = true\nLIMIT 20' },
+        { label: 'task',            sql: 'SELECT number, short_description, state, assigned_to\nFROM task\nLIMIT 20' },
+      ],
+      tables: [
+        { name: 'incident',       desc: 'Incidentes de TI',        cols: ['number','short_description','description','state','priority','urgency','impact','category','assigned_to','assignment_group','sys_created_on','resolved_at'] },
+        { name: 'sys_user',       desc: 'Usuários e contas',        cols: ['user_name','first_name','last_name','email','active','department','manager','phone','mobile_phone','sys_created_on'] },
+        { name: 'cmdb_ci',        desc: 'Itens de configuração',    cols: ['name','sys_class_name','serial_number','ip_address','mac_address','install_status','operational_status','support_group','location','sys_updated_on'] },
+        { name: 'change_request', desc: 'Gestão de mudanças',       cols: ['number','short_description','state','type','risk','impact','start_date','end_date','assigned_to','assignment_group'] },
+        { name: 'problem',        desc: 'Gestão de problemas',      cols: ['number','short_description','state','priority','known_error','assigned_to','sys_created_on'] },
+        { name: 'sc_request',     desc: 'Catálogo de serviços',     cols: ['number','short_description','state','requested_for','opened_at','closed_at','price'] },
+        { name: 'task',           desc: 'Tabela base de tarefas',   cols: ['number','short_description','state','priority','assigned_to','assignment_group','sys_created_on','sys_updated_on'] },
+        { name: 'sys_user_role',  desc: 'Funções (roles)',          cols: ['name','description','elevated_privilege','sys_created_on'] },
+      ],
+    },
     prereqs: {
       stepNum: 'Etapa 01',
       title: 'Checklist de pré-requisitos',
@@ -453,21 +718,38 @@ Then update <ic>DRIVER_CLASS</ic> in <ic>connection.py</ic> to match.`
       cmtCompose: '# lido do ambiente do host',
     },
     verify: {
-      stepNum: 'Etapa 07', title: 'Verificar a classe do driver e testar a conexão',
-      desc: 'Antes de executar sua aplicação, confirme o nome exato da classe do driver no JAR e valide a conexão com uma query simples.',
-      div1: '1 — confirmar o nome da classe do driver',
-      p1: 'A string da classe do driver passada para <ic>jaydebeapi.connect()</ic> precisa corresponder exatamente ao que está compilado no JAR. Execute isso dentro de um container em execução:',
-      langShell: 'bash — dentro do container',
-      cmtShell1: '# Abre um shell na imagem',
-      cmtShell2: '# Lista o conteúdo do JAR e filtra pelas classes Driver',
+      stepNum: 'Etapa 07', title: 'Verificar e testar a conexão',
+      desc: 'Execute sua primeira query contra a instância real. Cada seção abaixo é um comando independente que você pode copiar e colar.',
+      prereqBox: '<strong>Antes de começar:</strong> a imagem precisa estar construída (<ic>docker build -t sn-jdbc-app .</ic> concluído sem erros) e o arquivo <ic>.env</ic> precisa existir com credenciais reais. Você <strong>não</strong> precisa manter um container em execução — cada comando abaixo cria um container temporário, executa e encerra automaticamente.',
+      div0: '1 — confirmar o nome da classe do driver',
+      p0: 'Abra um shell interativo e temporário dentro da imagem. Isso não inicia nenhum servidor — apenas fornece um terminal:',
+      langShell: 'bash — execute na sua máquina',
+      cmtShell1: '# Cria um container temporário com shell (encerra quando você digitar "exit")',
+      cmtJar: '# Dentro do shell do container: inspecione o JAR',
+      cmtExit: '# Quando terminar',
       langExpected: 'saída esperada',
-      cmt1: '# Você deve ver algo como:',
-      cmt2: '# Converta o caminho → nome de classe: troque / por . e remova .class',
+      cmt1: '# Você deve ver uma linha como:',
+      cmt2: '# Converta caminho → nome de classe: troque "/" por "." e remova ".class"',
       cmt3: '# com/servicenow/jdbc/Driver.class  →  "com.servicenow.jdbc.Driver"',
-      warn: 'Se a saída mostrar um caminho diferente (ex.: <ic>com/service_now/jdbc/Driver.class</ic>), atualize <ic>DRIVER_CLASS</ic> em <ic>connection.py</ic>.',
-      div2: '2 — executar uma query de teste',
-      cmtExpected: '# Se a conexão estiver saudável, você verá dicts como:',
-      ok: 'Se as linhas aparecerem, a configuração está completa. O driver JDBC está carregado, a JVM iniciou e a SQL API do ServiceNow aceitou a conexão.',
+      warn: 'Se a saída mostrar um caminho diferente (ex.: <ic>com/service_now/jdbc/Driver.class</ic>), atualize <ic>DRIVER_CLASS</ic> em <ic>connection.py</ic> antes de continuar.',
+      div1: '2 — executar a query de teste (primeira vez)',
+      p1: 'Execute o <ic>query.py</ic> diretamente da sua máquina — sem precisar entrar no container. O flag <ic>--rm</ic> remove o container automaticamente após a execução:',
+      langRun: 'bash — execute na sua máquina',
+      cmtRun: '# Um comando: cria container → executa query.py → imprime resultados → remove container',
+      flagNote: '<ic>--rm</ic> remove o container após sair. <ic>--env-file .env</ic> injeta suas credenciais. Nada persiste.',
+      cmtExpected: '# Saída saudável se parece com:',
+      ok: 'Linhas impressas. O driver JDBC carregou corretamente, a JVM iniciou e a SQL API do ServiceNow aceitou a conexão.',
+      div2: '3 — alterar a query e re-executar sem rebuild',
+      p2: 'Monte o <ic>query.py</ic> da sua máquina como volume. O Docker usa seu arquivo local diretamente — edite, salve, execute o comando novamente. Nenhum <ic>docker build</ic> necessário.',
+      langVol: 'bash — execute na sua máquina',
+      cmtVol: '# -v monta seu query.py local sobre o que foi incluído na imagem',
+      volNote: 'Edite o <ic>query.py</ic> em qualquer editor, salve e execute o mesmo comando novamente. O container sempre lê a versão atual do disco.',
+      winNote: '<strong>Windows cmd:</strong> substitua <ic>$(pwd)</ic> por <ic>%cd%</ic>. <strong>PowerShell:</strong> use <ic>${PWD}</ic>.',
+      div3: 'opcional — script run_query.sh para conveniência',
+      p3: 'Salve este script uma vez para digitar apenas <ic>./run_query.sh</ic> ao re-executar:',
+      cmtScript1: '#!/bin/bash',
+      cmtScript2: '# Execute da raiz do projeto. Alterações no query.py têm efeito imediato.',
+      chmodNote: 'Torne executável uma vez: <ic>chmod +x run_query.sh</ic>',
     },
     trouble: {
       stepNum: 'Etapa 08', title: 'Solução de problemas',
@@ -536,16 +818,22 @@ function setLang(l) {
   document.getElementById('hintSnippets').textContent = T().hintSnippets;
   document.getElementById('envPanelTitle').textContent  = T().envPanelTitle;
   document.getElementById('sidebarDlLabel').textContent = T().sidebarDlLabel;
+  document.getElementById('zipPanelTitle').textContent  = T().zipPanelTitle;
+  document.getElementById('zipDlLabel').textContent     = T().zipDlLabel;
+  document.getElementById('persistLabel').textContent   = T().persistLabel;
+  const kmt = document.getElementById('kbdModalTitle');
+  if (kmt) kmt.textContent = T().kbdModalTitle;
   updateEnvPreview();
+  updateZipPreview();
   render();
 }
 
 // ── Config ───────────────────────────────────────────────
 const cfg = { instance: 'mycompany', user: 'svc_jdbc_account', pass: '', jar: '/app/drivers/servicenow-jdbc-driver.jar' };
-document.getElementById('cfgInstance').addEventListener('input', e => { cfg.instance = e.target.value || 'myinstance'; updateTpl(); updateEnvPreview(); });
-document.getElementById('cfgUser').addEventListener('input',     e => { cfg.user     = e.target.value || 'svc_jdbc';   updateTpl(); updateEnvPreview(); });
-document.getElementById('cfgPass').addEventListener('input',     e => { cfg.pass     = e.target.value;                 updateEnvPreview(); });
-document.getElementById('cfgJar').addEventListener('input',      e => { cfg.jar      = e.target.value || '/app/drivers/servicenow-jdbc-driver.jar'; updateTpl(); });
+document.getElementById('cfgInstance').addEventListener('input', e => { cfg.instance = e.target.value || 'myinstance'; updateTpl(); updateEnvPreview(); updateZipPreview(); });
+document.getElementById('cfgUser').addEventListener('input',     e => { cfg.user     = e.target.value || 'svc_jdbc';   updateTpl(); updateEnvPreview(); updateZipPreview(); });
+document.getElementById('cfgPass').addEventListener('input',     e => { cfg.pass     = e.target.value;                 updateEnvPreview(); updateZipPreview(); });
+document.getElementById('cfgJar').addEventListener('input',      e => { cfg.jar      = e.target.value || '/app/drivers/servicenow-jdbc-driver.jar'; updateTpl(); updateZipPreview(); });
 
 function updateTpl() {
   document.querySelectorAll('[data-tpl]').forEach(el => {
@@ -777,15 +1065,22 @@ function buildVerify() {
   <div><div class="step-title">${t.title}</div>
   <div class="step-desc">${t.desc}</div></div>
 </div>
-<div class="sdiv">${t.div1}</div>
-<p>${t.p1}</p>
+<div class="alert a-info"><span class="ai">ℹ</span><span>${t.prereqBox}</span></div>
+
+<div class="sdiv">${t.div0}</div>
+<p>${t.p0}</p>
 <div class="cw">
   <div class="ch"><span class="clang">${t.langShell}</span><button class="copy-btn" onclick="copyCode(this)">${T().copy}</button></div>
   <div class="cb"><span class="cmt">${t.cmtShell1}</span>
-docker run --rm -it sn-jdbc-app bash
+docker run --rm -it --env-file .env sn-jdbc-app bash</div>
+</div>
+<div class="cw">
+  <div class="ch"><span class="clang">bash — inside the container shell</span><button class="copy-btn" onclick="copyCode(this)">${T().copy}</button></div>
+  <div class="cb"><span class="cmt">${t.cmtJar}</span>
+jar tf <span class="tpl"><span data-tpl="jar">/app/drivers/servicenow-jdbc-driver.jar</span></span> | grep -i driver
 
-<span class="cmt">${t.cmtShell2}</span>
-jar tf <span class="tpl"><span data-tpl="jar">/app/drivers/servicenow-jdbc-driver.jar</span></span> | grep -i driver</div>
+<span class="cmt">${t.cmtExit}</span>
+exit</div>
 </div>
 <div class="cw">
   <div class="ch"><span class="clang">${t.langExpected}</span></div>
@@ -796,26 +1091,52 @@ com/servicenow/jdbc/Driver.class
 <span class="cmt">${t.cmt3}</span></div>
 </div>
 <div class="alert a-warn"><span class="ai">⚠</span><span>${t.warn}</span></div>
-<div class="sdiv">${t.div2}</div>
+
+<div class="sdiv">${t.div1}</div>
+<p>${t.p1}</p>
 <div class="cw">
-  <div class="ch"><span class="cfile">test_connection.py</span><button class="copy-btn" onclick="copyCode(this)">${T().copy}</button></div>
-  <div class="cb"><span class="kw">from</span> connection <span class="kw">import</span> run_query
-
-results = <span class="fn">run_query</span>(
-    <span class="str">"SELECT number, short_description, state FROM incident LIMIT 5"</span>
-)
-
-<span class="kw">for</span> row <span class="kw">in</span> results:
-    <span class="fn">print</span>(row)</div>
+  <div class="ch"><span class="clang">${t.langRun}</span><button class="copy-btn" onclick="copyCode(this)">${T().copy}</button></div>
+  <div class="cb"><span class="cmt">${t.cmtRun}</span>
+docker run --rm --env-file .env sn-jdbc-app python query.py</div>
 </div>
+<div class="alert a-info"><span class="ai">ℹ</span><span>${t.flagNote}</span></div>
 <div class="cw">
   <div class="ch"><span class="clang">${t.langExpected}</span></div>
   <div class="cb"><span class="cmt">${t.cmtExpected}</span>
-{<span class="str">'number'</span>: <span class="str">'INC0001234'</span>, <span class="str">'short_description'</span>: <span class="str">'VPN not working'</span>, <span class="str">'state'</span>: <span class="str">'1'</span>}
-{<span class="str">'number'</span>: <span class="str">'INC0001235'</span>, <span class="str">'short_description'</span>: <span class="str">'Printer offline'</span>,  <span class="str">'state'</span>: <span class="str">'2'</span>}</div>
+[
+  {<span class="str">"number"</span>: <span class="str">"INC0001234"</span>, <span class="str">"short_description"</span>: <span class="str">"VPN not working"</span>, <span class="str">"state"</span>: <span class="str">"1"</span>},
+  {<span class="str">"number"</span>: <span class="str">"INC0001235"</span>, <span class="str">"short_description"</span>: <span class="str">"Printer offline"</span>,  <span class="str">"state"</span>: <span class="str">"2"</span>}
+]
+
+2 row(s) returned.</div>
 </div>
-<div class="alert a-ok"><span class="ai">✓</span><span>${t.ok}</span></div>`;
-}
+<div class="alert a-ok"><span class="ai">✓</span><span>${t.ok}</span></div>
+
+<div class="sdiv">${t.div2}</div>
+<p>${t.p2}</p>
+<div class="cw">
+  <div class="ch"><span class="clang">${t.langVol}</span><button class="copy-btn" onclick="copyCode(this)">${T().copy}</button></div>
+  <div class="cb"><span class="cmt">${t.cmtVol}</span>
+docker run --rm --env-file .env \
+  -v "$(pwd)/query.py:/app/query.py" \
+  sn-jdbc-app python query.py</div>
+</div>
+<div class="alert a-ok" style="flex-direction:column;gap:6px">
+  <div style="display:flex;gap:12px"><span class="ai">✓</span><span>${t.volNote}</span></div>
+  <div style="display:flex;gap:12px;margin-top:4px"><span class="ai">⚠</span><span>${t.winNote}</span></div>
+</div>
+
+<div class="sdiv">${t.div3}</div>
+<p>${t.p3}</p>
+<div class="cw">
+  <div class="ch"><span class="cfile">run_query.sh</span><button class="copy-btn" onclick="copyCode(this)">${T().copy}</button></div>
+  <div class="cb"><span class="cmt">${t.cmtScript1}</span>
+<span class="cmt">${t.cmtScript2}</span>
+docker run --rm --env-file .env \
+  -v "$(pwd)/query.py:/app/query.py" \
+  sn-jdbc-app python query.py</div>
+</div>
+<div class="alert a-info"><span class="ai">ℹ</span><span>${t.chmodNote}</span></div>`;}
 
 function buildTrouble() {
   const t = T().trouble;
@@ -835,11 +1156,74 @@ ${t.issues.map(issue => `
 </div>`).join('')}
 <div class="navbtns">
   <button class="btn" onclick="goTo(6)">← ${T().back.replace('← ','')}</button>
-  <button class="btn btn-p" onclick="restart()">↺ ${T().restart.replace('↺ ','')}</button>
+  <button class="btn btn-p" onclick="advance()">${T().next}</button>
 </div>`;
 }
 
-const CONTENT = [buildPrereqs, buildStructure, buildDockerfile, buildReqs, buildConnection, buildRun, buildVerify, buildTrouble];
+function buildQueryRunner() {
+  const t = T().queryRunner;
+  return `
+<div class="step-hdr">
+  <span class="step-num">${t.stepNum}</span>
+  <div><div class="step-title">${t.title}</div>
+  <div class="step-desc">${t.desc}</div></div>
+</div>
+<div class="qr-layout">
+  <div class="qr-templates">
+    <div class="qr-tpl-label">${t.tplLabel}</div>
+    ${t.templates.map((tpl,i) => `<button class="tpl-btn${i===0?' active':''}" onclick="qrSetTemplate(this,'${escJs(tpl.sql)}')">${tpl.label}</button>`).join('\n    ')}
+    <div class="sq-divider" id="sqDivider">${t.sqLabel}</div>
+    <div id="sqList"></div>
+  </div>
+  <div class="qr-editor-wrap">
+    <div class="qr-editor-hdr">
+      <span class="qr-editor-title">SQL</span>
+      <span style="font-family:var(--mono);font-size:11px;color:var(--ts)">SELECT only — no DDL</span>
+    </div>
+    <textarea class="qr-sql" id="qrSql" spellcheck="false" oninput="qrRefresh()" onkeydown="qrTab(event)">${escHtml(t.templates[0].sql)}</textarea>
+    <div class="qr-editor-footer">
+      <span class="qr-fmt-label">${t.fmtLabel}:</span>
+      <button class="fmt-tab active" id="fmt-script"   onclick="qrSetFmt('script',   this)">${t.fmtScript}</button>
+      <button class="fmt-tab"        id="fmt-oneliner" onclick="qrSetFmt('oneliner', this)">${t.fmtOneliner}</button>
+      <button class="fmt-tab"        id="fmt-exec"     onclick="qrSetFmt('exec',     this)">${t.fmtExec}</button>
+      <button class="fmt-tab"        id="fmt-pandas"   onclick="qrSetFmt('pandas',   this)">${t.fmtPandas}</button>
+      <button class="copy-btn" style="margin-left:auto" onclick="sqShowPrompt()">${t.sqSaveBtn}</button>
+    </div>
+    <div class="sq-prompt" id="sqPrompt">
+      <div class="sq-prompt-row">
+        <input class="sq-name-input" id="sqNameInput" placeholder="${t.sqSavePlaceholder}" onkeydown="sqKeydown(event)">
+        <button class="sq-save-confirm" onclick="sqConfirm()">${t.sqConfirm}</button>
+        <button class="sq-cancel" onclick="sqHidePrompt()">${t.sqCancel}</button>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="qr-out-wrap">
+  <div class="qr-out-hdr">
+    <span class="qr-out-title">${t.outTitle}</span>
+    <button class="copy-btn" id="qrCopyBtn" onclick="qrCopy(this)">${t.copyOut}</button>
+  </div>
+  <div class="qr-out-body" id="qrOutput"></div>
+</div>
+<div class="sdiv">${t.refTitle}</div>
+<input class="tref-search" id="trefSearch" placeholder="${t.searchPlaceholder}" oninput="trefFilter(this.value)">
+<p style="margin-bottom:10px;font-size:12px;color:var(--ts)">${t.refHint}</p>
+<div class="table-ref" id="tableRef">
+${t.tables.map(tbl => `
+  <div class="tref-row">
+    <div class="tref-hdr" onclick="this.parentElement.classList.toggle('open')">
+      <span class="tref-name">${tbl.name}</span>
+      <span class="tref-desc">${tbl.desc}</span>
+    </div>
+    <div class="tref-body">
+      ${tbl.cols.map(c => `<span class="col-pill" onclick="qrInsertCol('${c}')">${c}</span>`).join('')}
+      <div class="col-pill-hint">↑ click to insert into SELECT</div>
+    </div>
+  </div>`).join('')}
+</div>`;
+}
+
+const CONTENT = [buildPrereqs, buildStructure, buildDockerfile, buildReqs, buildConnection, buildRun, buildVerify, buildTrouble, buildQueryRunner];
 
 // ── .env helpers ────────────────────────────────────────
 function envContent() {
@@ -919,23 +1303,24 @@ function render() {
   const mainEl = document.getElementById('mainContent');
   mainEl.innerHTML = CONTENT[current]();
 
-  if (current < 7) {
+  if (current < 8) {
     const nav = document.createElement('div');
     nav.className = 'navbtns';
     nav.innerHTML = `
       <button class="btn" onclick="goTo(${current-1})" ${current===0?'disabled':''}>${T().back}</button>
-      <button class="btn btn-p" onclick="advance()">${current===6 ? T().complete : T().next}</button>`;
+      <button class="btn btn-p" onclick="advance()">${current===7 ? T().complete : T().next}</button>`;
     mainEl.appendChild(nav);
   }
 
   updateTpl();
   updateEnvPreview();
+  if (current === 8) { qrRefresh(); sqRender(); }
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-function goTo(i)  { if(i>=0 && i<8){ current=i; render(); } }
-function advance(){ done.add(current); if(current<7){ current++; render(); } }
-function restart(){ current=0; done.clear(); render(); }
+function goTo(i)  { if(i>=0 && i<9){ current=i; render(); saveProgress(); } }
+function advance(){ done.add(current); if(current<8){ current++; render(); saveProgress(); } }
+function restart(){ current=0; done.clear(); clearProgress(); render(); }
 
 function copyCode(btn) {
   const text = btn.closest('.cw').querySelector('.cb').innerText;
@@ -959,12 +1344,548 @@ function toggleCheck(el) {
   el.classList.toggle('checked');
   const c = document.getElementById('ckcount');
   if (c) c.textContent = document.querySelectorAll('.ci.checked').length;
+  saveProgress();
 }
 
 function toggleIssue(el) { el.classList.toggle('open'); }
 
+// ── Mobile drawer ─────────────────────────────────────────
+function openDrawer() {
+  document.querySelector('.sidebar').classList.add('drawer-open');
+  document.getElementById('drawerOverlay').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+function closeDrawer() {
+  document.querySelector('.sidebar').classList.remove('drawer-open');
+  document.getElementById('drawerOverlay').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+// ── Keyboard shortcuts ────────────────────────────────────
+function openKbdModal() {
+  const modal = document.getElementById('kbdModal');
+  const body  = document.getElementById('kbdModalBody');
+  document.getElementById('kbdModalTitle').textContent = T().kbdModalTitle;
+  body.innerHTML = T().kbdShortcuts.map(s => `
+    <div class="kbd-row">
+      <span class="kbd-desc">${s.desc}</span>
+      <span class="kbd-keys">${s.keys.map(k => `<kbd>${k}</kbd>`).join('')}</span>
+    </div>`).join('');
+  modal.classList.add('open');
+}
+function closeKbdModal(e) {
+  if (e && e.target !== document.getElementById('kbdModal')) return;
+  document.getElementById('kbdModal').classList.remove('open');
+}
+
+document.addEventListener('keydown', e => {
+  const tag = document.activeElement?.tagName;
+  const inInput = tag === 'INPUT' || tag === 'TEXTAREA';
+
+  // Escape always closes modals/drawer
+  if (e.key === 'Escape') {
+    document.getElementById('kbdModal').classList.remove('open');
+    closeDrawer();
+    sqHidePrompt();
+    return;
+  }
+  if (inInput) return;
+
+  if (e.key === 'ArrowRight' || e.key === ']') { e.preventDefault(); advance(); }
+  else if (e.key === 'ArrowLeft' || e.key === '[') { e.preventDefault(); goTo(current - 1); }
+  else if (e.key === '?') openKbdModal();
+  else if (e.key >= '1' && e.key <= '9') goTo(parseInt(e.key) - 1);
+});
+
+// ── Saved queries ─────────────────────────────────────────
+const SQ_KEY = 'sn-jdbc-saved-queries';
+let savedQueries = [];
+
+function sqLoad() {
+  try {
+    const raw = localStorage.getItem(SQ_KEY);
+    savedQueries = raw ? JSON.parse(raw) : [];
+  } catch(e) { savedQueries = []; }
+}
+function sqSave() {
+  try { localStorage.setItem(SQ_KEY, JSON.stringify(savedQueries)); } catch(e) {}
+}
+
+function sqRender() {
+  const list = document.getElementById('sqList');
+  if (!list) return;
+  const t = T();
+  if (!savedQueries.length) {
+    list.innerHTML = `<div class="sq-empty">${t.sqEmpty}</div>`;
+    return;
+  }
+  list.innerHTML = savedQueries.map((q, i) => `
+    <div class="sq-item">
+      <button class="sq-load" onclick="sqLoadQuery(${i})" title="${escHtml(q.sql)}">${escHtml(q.name)}</button>
+      <button class="sq-del" onclick="sqDelete(${i})" title="Delete">×</button>
+    </div>`).join('');
+}
+
+function sqLoadQuery(i) {
+  const ta = document.getElementById('qrSql');
+  if (!ta || !savedQueries[i]) return;
+  document.querySelectorAll('.tpl-btn').forEach(b => b.classList.remove('active'));
+  ta.value = savedQueries[i].sql;
+  qrRefresh();
+}
+
+function sqDelete(i) {
+  savedQueries.splice(i, 1);
+  sqSave();
+  sqRender();
+  showToast(T().sqToastDeleted);
+}
+
+function sqShowPrompt() {
+  const p = document.getElementById('sqPrompt');
+  if (!p) return;
+  p.classList.add('open');
+  const inp = document.getElementById('sqNameInput');
+  if (inp) { inp.value = ''; inp.focus(); }
+}
+function sqHidePrompt() {
+  const p = document.getElementById('sqPrompt');
+  if (p) p.classList.remove('open');
+}
+function sqKeydown(e) {
+  if (e.key === 'Enter')  { e.preventDefault(); sqConfirm(); }
+  if (e.key === 'Escape') { e.preventDefault(); sqHidePrompt(); }
+}
+function sqConfirm() {
+  const ta   = document.getElementById('qrSql');
+  const inp  = document.getElementById('sqNameInput');
+  if (!ta || !inp) return;
+  const name = inp.value.trim();
+  const sql  = ta.value.trim();
+  if (!name || !sql) return;
+  savedQueries.push({ name, sql });
+  sqSave();
+  sqRender();
+  sqHidePrompt();
+  showToast(T().sqToastSaved);
+}
+function zipFileList() {
+  const hasCreds = cfg.user && cfg.pass;
+  return [
+    { name: 'Dockerfile',      filled: true },
+    { name: 'requirements.txt',filled: true },
+    { name: 'connection.py',   filled: true },
+    { name: 'query.py',        filled: true },
+    { name: '.env.example',    filled: true },
+    { name: '.gitignore',      filled: true },
+    { name: '.env',            filled: hasCreds },
+  ];
+}
+
+function updateZipPreview() {
+  const el = document.getElementById('zipPreview');
+  if (!el) return;
+  el.innerHTML = zipFileList().map(f =>
+    `<span class="zip-file ${f.filled ? 'filled' : ''}">${f.filled ? '✓' : '·'} ${f.name}</span>`
+  ).join('\n');
+}
+
+async function downloadZip() {
+  const btn = document.getElementById('zipDlBtn');
+  if (btn) { btn.disabled = true; btn.innerHTML = '⏳ …'; }
+
+  const url  = `jdbc:servicenow://https://${cfg.instance}.service-now.com`;
+  const currentSql = (document.getElementById('qrSql')?.value?.trim()) ||
+    'SELECT number, short_description, state\nFROM incident\nLIMIT 20';
+
+  const dockerfile = `FROM python:3.11-slim
+
+# Install JDK 17 — required by JPype1 to start the JVM
+RUN apt-get update && apt-get install -y \\
+    openjdk-17-jdk \\
+    && rm -rf /var/lib/apt/lists/*
+
+# Set JAVA_HOME so JPype1 can find libjvm.so automatically
+ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+ENV PATH="$JAVA_HOME/bin:$PATH"
+
+WORKDIR /app
+
+# Copy the JDBC driver JAR before installing Python deps
+COPY drivers/servicenow-jdbc-driver.jar ${cfg.jar}
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+`;
+
+  const requirementsTxt = `JayDeBeApi==1.2.3
+JPype1==1.5.0
+`;
+
+  const connectionPy = `import jaydebeapi
+import os
+
+# ── Driver settings ──────────────────────────────────────
+DRIVER_CLASS = "com.servicenow.jdbc.Driver"   # verify: jar tf ${cfg.jar} | grep -i driver
+JDBC_URL     = "${url}"
+JAR_PATH     = "${cfg.jar}"
+
+# ── Credentials come from environment variables ──────────
+# Never hardcode passwords in source code.
+USERNAME = os.environ["SN_USER"]   # set with --env-file .env at docker run
+PASSWORD = os.environ["SN_PASS"]
+
+
+def get_connection():
+    """Open and return a JDBC connection to the ServiceNow SQL API."""
+    return jaydebeapi.connect(
+        DRIVER_CLASS,
+        JDBC_URL,
+        [USERNAME, PASSWORD],
+        JAR_PATH,
+    )
+
+
+def run_query(sql: str) -> list[dict]:
+    """Execute a SQL query and return rows as a list of dicts."""
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql)
+            cols = [d[0] for d in cur.description]
+            return [dict(zip(cols, row)) for row in cur.fetchall()]
+`;
+
+  const queryPy = `# query.py — run with: docker run --env-file .env sn-jdbc-app python query.py
+import json
+from connection import run_query
+
+SQL = """
+${currentSql}
+"""
+
+rows = run_query(SQL)
+print(json.dumps(rows, indent=2, default=str))
+print(f"\\n{len(rows)} row(s) returned.")
+`;
+
+  const envExample = `# ServiceNow JDBC credentials
+# Copy this file to .env and fill in your values.
+# NEVER commit .env — it is listed in .gitignore.
+
+SN_USER=${cfg.user}
+SN_PASS=your_password_here
+`;
+
+  const envFile = `SN_USER=${cfg.user}
+SN_PASS=${cfg.pass || 'your_password_here'}
+`;
+
+  const gitignore = `# ── Secrets — NEVER commit these ──────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── ServiceNow JDBC driver ─────────────────────────────────
+drivers/
+*.jar
+
+# ── Python ────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# ── OS / Editor ───────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+`;
+
+  const runQuerySh = `#!/bin/bash
+# Run from the project root. Edit query.py, save, run this script — no rebuild needed.
+docker run --rm --env-file .env \\
+  -v "$(pwd)/query.py:/app/query.py" \\
+  sn-jdbc-app python query.py
+`;
+
+  try {
+    const zip = new JSZip();
+    zip.file('Dockerfile',        dockerfile);
+    zip.file('requirements.txt',  requirementsTxt);
+    zip.file('connection.py',     connectionPy);
+    zip.file('query.py',          queryPy);
+    zip.file('run_query.sh',      runQuerySh);
+    zip.file('.env.example',      envExample);
+    zip.file('.gitignore',        gitignore);
+    if (cfg.pass) zip.file('.env', envFile);
+    zip.folder('drivers');   // placeholder so developers know where to put the JAR
+
+    const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'sn-jdbc-project.zip';
+    a.click();
+    URL.revokeObjectURL(a.href);
+    showToast(T().zipToast);
+  } catch(e) {
+    showToast('Error generating ZIP: ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = T().zipDlLabel; }
+  }
+}
+
+// ── Toast ─────────────────────────────────────────────────
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  if (!t) return;
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2800);
+}
+
+// ── Progress persistence (localStorage) ──────────────────
+const LS_KEY = 'sn-jdbc-progress';
+
+function saveProgress() {
+  try {
+    const state = {
+      current,
+      done: [...done],
+      lang,
+      cfg: { instance: cfg.instance, user: cfg.user, jar: cfg.jar },
+    };
+    localStorage.setItem(LS_KEY, JSON.stringify(state));
+    const dot = document.getElementById('persistDot');
+    if (dot) { dot.classList.add('saved'); }
+  } catch(e) { /* private browsing — silently ignore */ }
+}
+
+function loadProgress() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return;
+    const state = JSON.parse(raw);
+    if (state.done)     state.done.forEach(i => done.add(i));
+    if (state.current !== undefined) current = state.current;
+    if (state.lang)     lang = state.lang;
+    if (state.cfg) {
+      if (state.cfg.instance) { cfg.instance = state.cfg.instance; document.getElementById('cfgInstance').value = cfg.instance; }
+      if (state.cfg.user)     { cfg.user     = state.cfg.user;     document.getElementById('cfgUser').value     = cfg.user;     }
+      if (state.cfg.jar)      { cfg.jar      = state.cfg.jar;      document.getElementById('cfgJar').value      = cfg.jar;      }
+    }
+    if (lang === 'pt') {
+      document.getElementById('btnEN').classList.remove('active');
+      document.getElementById('btnPT').classList.add('active');
+      document.documentElement.lang = 'pt-BR';
+    }
+    const dot = document.getElementById('persistDot');
+    if (dot) dot.classList.add('saved');
+  } catch(e) { /* corrupted storage — ignore */ }
+}
+
+function clearProgress() {
+  try { localStorage.removeItem(LS_KEY); } catch(e) {}
+  const dot = document.getElementById('persistDot');
+  if (dot) dot.classList.remove('saved');
+}
+
+// ── Table search filter ───────────────────────────────────
+function trefFilter(query) {
+  const q = query.trim().toLowerCase();
+  document.querySelectorAll('#tableRef .tref-row').forEach(row => {
+    const name = row.querySelector('.tref-name')?.textContent?.toLowerCase() || '';
+    const cols = Array.from(row.querySelectorAll('.col-pill')).map(p => p.textContent.toLowerCase()).join(' ');
+    const matches = !q || name.includes(q) || cols.includes(q);
+    row.classList.toggle('hidden', !matches);
+    if (matches && q) row.classList.add('open');
+  });
+}
+let qrFmt = 'script';
+
+function escJs(s) { return s.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/\n/g,'\\n'); }
+
+function qrSetTemplate(btn, sqlEncoded) {
+  document.querySelectorAll('.tpl-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  const ta = document.getElementById('qrSql');
+  if (ta) { ta.value = sqlEncoded.replace(/\\n/g,'\n').replace(/\\'/g,"'"); qrRefresh(); }
+}
+
+function qrSetFmt(fmt, btn) {
+  qrFmt = fmt;
+  document.querySelectorAll('.fmt-tab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  qrRefresh();
+}
+
+function qrTab(e) {
+  if (e.key !== 'Tab') return;
+  e.preventDefault();
+  const ta = e.target;
+  const s = ta.selectionStart, end = ta.selectionEnd;
+  ta.value = ta.value.substring(0,s) + '  ' + ta.value.substring(end);
+  ta.selectionStart = ta.selectionEnd = s + 2;
+}
+
+function qrInsertCol(col) {
+  const ta = document.getElementById('qrSql');
+  if (!ta) return;
+  const sql = ta.value;
+  // Find the SELECT … FROM pattern and inject the column
+  const m = sql.match(/^(\s*SELECT\s+)([\s\S]*?)(\s+FROM\s+)/im);
+  if (m) {
+    const existing = m[2].trim();
+    if (existing === '*') {
+      ta.value = sql.replace(/^(\s*SELECT\s+)\*(\s+FROM\s+)/im, `$1${col}$2`);
+    } else {
+      ta.value = sql.replace(/^(\s*SELECT\s+)([\s\S]*?)(\s+FROM\s+)/im, `$1$2, ${col}$3`);
+    }
+  } else {
+    ta.value = sql + ', ' + col;
+  }
+  qrRefresh();
+  ta.focus();
+}
+
+function qrRefresh() {
+  const ta = document.getElementById('qrSql');
+  const out = document.getElementById('qrOutput');
+  if (!ta || !out) return;
+  const sql = ta.value.trim();
+  if (!sql) { out.innerHTML = '<span style="color:var(--ts)">← write a query to generate code</span>'; return; }
+  const safeUrl  = `jdbc:servicenow://https://${cfg.instance}.service-now.com`;
+  const safeJar  = cfg.jar;
+  const safeUser = cfg.user;
+
+  let code = '';
+  if (qrFmt === 'script') {
+    code = genScript(sql, safeUrl, safeJar, safeUser);
+  } else if (qrFmt === 'oneliner') {
+    code = genOneliner(sql);
+  } else if (qrFmt === 'exec') {
+    code = genExec(sql);
+  } else if (qrFmt === 'pandas') {
+    code = genPandas(sql, safeUrl, safeJar, safeUser);
+  }
+  out.innerHTML = syntaxHL(code);
+}
+
+function syntaxHL(code) {
+  return escHtml(code)
+    .replace(/\b(import|from|def|return|with|as|for|in|if|not|and|or|print|True|False|None)\b/g, '<span class="kw">$1</span>')
+    .replace(/("""[\s\S]*?"""|\'\'\'[\s\S]*?\'\'\'|"[^"]*"|\'[^\']*\')/g, '<span class="str">$1</span>')
+    .replace(/#.*/g, '<span class="cmt">$&</span>')
+    .replace(/\b(jaydebeapi|os|json|csv|sys|pandas|pd|run_query|get_connection|connect|cursor|execute|fetchall|description|DataFrame|to_csv|to_json|print|open|writer|writerow|writerows|environ)\b/g, '<span class="fn">$1</span>');
+}
+
+function sqlOneLine(sql) { return sql.replace(/\s*\n\s*/g, ' ').replace(/'/g, "\\'"); }
+
+function genScript(sql, url, jar, user) {
+  return `# query.py — run with: docker run --env-file .env sn-jdbc-app python query.py
+import jaydebeapi, os, json
+
+DRIVER = "com.servicenow.jdbc.Driver"
+URL    = "${url}"
+JAR    = "${jar}"
+SQL    = """
+${sql}
+"""
+
+conn = jaydebeapi.connect(DRIVER, URL, [os.environ["SN_USER"], os.environ["SN_PASS"]], JAR)
+cur  = conn.cursor()
+cur.execute(SQL)
+cols = [d[0] for d in cur.description]
+rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+conn.close()
+
+print(json.dumps(rows, indent=2, default=str))
+print(f"\\n{len(rows)} row(s) returned.")`;
+}
+
+function genOneliner(sql) {
+  const q = sqlOneLine(sql);
+  return `# One-liner — build first, then run:
+docker build -t sn-jdbc-app . && \\
+docker run --env-file .env sn-jdbc-app \\
+  python -c "
+import jaydebeapi, os, json
+conn = jaydebeapi.connect(
+  'com.servicenow.jdbc.Driver',
+  'jdbc:servicenow://https://${cfg.instance}.service-now.com',
+  [os.environ['SN_USER'], os.environ['SN_PASS']],
+  '${cfg.jar}'
+)
+cur = conn.cursor()
+cur.execute('${q}')
+cols = [d[0] for d in cur.description]
+print(json.dumps([dict(zip(cols,r)) for r in cur.fetchall()], indent=2, default=str))
+conn.close()
+"`;
+}
+
+function genExec(sql) {
+  const q = sqlOneLine(sql);
+  return `# Requires the container to already be running:
+# docker run -d --name sn-app --env-file .env sn-jdbc-app tail -f /dev/null
+
+docker exec sn-app python -c "
+import jaydebeapi, os, json
+conn = jaydebeapi.connect(
+  'com.servicenow.jdbc.Driver',
+  'jdbc:servicenow://https://${cfg.instance}.service-now.com',
+  [os.environ['SN_USER'], os.environ['SN_PASS']],
+  '${cfg.jar}'
+)
+cur = conn.cursor()
+cur.execute('${q}')
+cols = [d[0] for d in cur.description]
+print(json.dumps([dict(zip(cols,r)) for r in cur.fetchall()], indent=2, default=str))
+conn.close()
+"`;
+}
+
+function genPandas(sql, url, jar, user) {
+  return `# query_df.py — outputs results as a pandas DataFrame
+# Add 'pandas' to requirements.txt before building.
+import jaydebeapi, os, pandas as pd
+
+DRIVER = "com.servicenow.jdbc.Driver"
+URL    = "${url}"
+JAR    = "${jar}"
+SQL    = """
+${sql}
+"""
+
+conn = jaydebeapi.connect(DRIVER, URL, [os.environ["SN_USER"], os.environ["SN_PASS"]], JAR)
+cur  = conn.cursor()
+cur.execute(SQL)
+cols = [d[0] for d in cur.description]
+df   = pd.DataFrame(cur.fetchall(), columns=cols)
+conn.close()
+
+print(df.to_string(index=False))
+print(f"\\nShape: {df.shape}")`;
+}
+
+function qrCopy(btn) {
+  const out = document.getElementById('qrOutput');
+  if (!out) return;
+  navigator.clipboard.writeText(out.innerText).then(() => {
+    const orig = btn.textContent;
+    btn.textContent = T().copied;
+    btn.classList.add('ok');
+    setTimeout(() => { btn.textContent = T().queryRunner.copyOut; btn.classList.remove('ok'); }, 2000);
+  });
+}
+
+sqLoad();
+loadProgress();
 render();
 updateEnvPreview();
+updateZipPreview();
 </script>
 </body>
 </html>
