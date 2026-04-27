@@ -391,6 +391,7 @@ const TRANSLATIONS = {
       { title: 'Verify & test',     short: 'Verify'    },
       { title: 'Troubleshooting',   short: 'Debug'     },
       { title: 'Query runner',      short: 'Queries'   },
+      { title: 'Run locally',       short: 'Local'     },
     ],
     queryRunner: {
       stepNum: 'Step 09',
@@ -427,6 +428,32 @@ const TRANSLATIONS = {
         { name: 'sys_user_role',  desc: 'Roles',              cols: ['name','description','elevated_privilege','sys_created_on'] },
       ],
     },
+    local: {
+      stepNum: 'Step 10', title: 'Run locally — no Docker needed',
+      desc: 'Run query.py directly on your machine. Useful for fast iteration, IDE debugging, and CI pipelines where Docker is not available.',
+      prereqBox: '<strong>Prerequisites on your local machine:</strong> Python 3.9+, JDK 17 installed and <ic>JAVA_HOME</ic> set, and <ic>pip install JayDeBeApi JPype1</ic> run at least once. The <ic>servicenow-jdbc-driver.jar</ic> must be at the path set in <ic>connection.py</ic>.',
+      div0: '1 — install dependencies locally (once)',
+      cmtVenv: '# Create an isolated virtual environment — recommended',
+      cmtInstall: '# Install the JDBC bridge packages',
+      div1: '2 — load .env and run with an inline SQL argument',
+      p1: 'Pass the SQL directly as a command-line argument. The script reads <ic>.env</ic> automatically via <ic>python-dotenv</ic>.',
+      langBash: 'bash — your host machine',
+      cmtInline: '# Run with SQL inline — no file editing needed',
+      div2: '3 — run with a .sql file',
+      p2: 'Write your query in a <ic>.sql</ic> file for longer or multi-line statements. Pass the filename as the argument.',
+      langSqlFile: 'bash',
+      cmtSqlFile: '# query.sql can be any file path',
+      div3: '4 — the local runner script (run_local.py)',
+      p3: 'Save this script once. It auto-loads <ic>.env</ic>, accepts either inline SQL or a <ic>--file</ic> path, and supports three output formats.',
+      cmtArgparse: '# run_local.py — flexible local query runner',
+      div4: 'usage examples',
+      cmtUsage1: '# Inline SQL',
+      cmtUsage2: '# From a .sql file',
+      cmtUsage3: '# JSON output',
+      cmtUsage4: '# CSV output saved to file',
+      winNote: '<strong>Windows:</strong> use <ic>set</ic> to verify env vars, or use a <ic>.env</ic> file — <ic>python-dotenv</ic> loads it the same way.',
+      javaHomeNote: '<strong>JAVA_HOME not set?</strong> JPype1 will fail with <ic>JVMNotFoundException</ic>. Set it permanently in your shell profile: <ic>export JAVA_HOME=$(/usr/libexec/java_home -v 17)</ic> (macOS) or add it to <ic>/etc/environment</ic> (Linux).',
+    },
     prereqs: {
       stepNum: 'Step 01',
       title: 'Prerequisites checklist',
@@ -437,7 +464,7 @@ const TRANSLATIONS = {
         { title: 'ServiceNow instance URL confirmed',       desc: 'You know your instance subdomain — e.g. <ic>mycompany.service-now.com</ic>' },
         { title: 'Service account created with correct role', desc: 'A ServiceNow admin has created the account and assigned the <ic>sn_jdbc_rest_access</ic> role.' },
         { title: 'SQL API IP filter configured',            desc: "Your container's egress IP is listed under SQL API IP filter criteria in the instance. Without this, every connection attempt will be rejected silently." },
-        { title: 'JDBC driver JAR downloaded',              desc: 'The file <ic>servicenow-jdbc-driver.jar</ic> (or similar name) is on your machine and ready to COPY into the image.' },
+        { title: 'JDBC driver JAR downloaded',              desc: 'The file <ic>servicenow-jdbc-driver.jar</ic> (or similar name) is on your machine and ready to COPY into the image. Download from the <a href="https://store.servicenow.com/store/app/699af7c347404f90040ae738436d4350" target="_blank" rel="noopener" style="color:var(--blue);text-decoration:underline">ServiceNow Store → SQL API</a>.' },
         { title: 'Docker installed and running',            desc: 'Run <ic>docker info</ic> to confirm the daemon is up.' },
       ],
       warn: '<strong>Important:</strong> Python does not natively speak JDBC — it is a Java standard. This guide bridges the gap using <strong>JayDeBeApi + JPype1</strong>, which spins up a JVM inside your Python process. JDK 17 must be present inside the container.',
@@ -445,7 +472,7 @@ const TRANSLATIONS = {
     structure: {
       stepNum: 'Step 02', title: 'Project structure',
       desc: 'Place all files as shown below before building the image. The JAR must be present locally so Docker can COPY it in.',
-      info: '<strong>Where to download the JAR:</strong> In your ServiceNow instance, navigate to <ic>SQL API → Downloads</ic> (or search "SQL API drivers" in the navigator). The file is instance-specific — do not share across instances on different release versions.',
+      info: '<strong>Where to download the JAR:</strong> Get it from the <a href="https://store.servicenow.com/store/app/699af7c347404f90040ae738436d4350" target="_blank" rel="noopener" style="color:var(--blue);text-decoration:underline">ServiceNow Store → SQL API</a>. Once the app is installed on your instance, navigate to <ic>SQL API → Downloads</ic> inside ServiceNow to get the driver file. The JAR is instance-specific — do not share across instances on different release versions.',
       warn: '<strong>Never commit the JAR to git.</strong> Add <ic>drivers/</ic> to your <ic>.gitignore</ic>. It contains proprietary ServiceNow code and may contain instance-specific configuration.',
       cmt1: '# connection helper', cmt2: '# your application code', cmt3: '# ← download from your SN instance',
     },
@@ -619,6 +646,7 @@ Then update <ic>DRIVER_CLASS</ic> in <ic>connection.py</ic> to match.`
       { title: 'Verificar & testar',  short: 'Verificar' },
       { title: 'Solução de problemas', short: 'Debug'    },
       { title: 'Query runner',         short: 'Queries'  },
+      { title: 'Rodar localmente',    short: 'Local'    },
     ],
     queryRunner: {
       stepNum: 'Etapa 09',
@@ -655,6 +683,32 @@ Then update <ic>DRIVER_CLASS</ic> in <ic>connection.py</ic> to match.`
         { name: 'sys_user_role',  desc: 'Funções (roles)',          cols: ['name','description','elevated_privilege','sys_created_on'] },
       ],
     },
+    local: {
+      stepNum: 'Etapa 10', title: 'Rodar localmente — sem Docker',
+      desc: 'Execute o query.py diretamente na sua máquina. Ideal para iteração rápida, debug no IDE e pipelines de CI sem Docker.',
+      prereqBox: '<strong>Pré-requisitos na sua máquina:</strong> Python 3.9+, JDK 17 instalado com <ic>JAVA_HOME</ic> definido, e <ic>pip install JayDeBeApi JPype1</ic> executado ao menos uma vez. O arquivo <ic>servicenow-jdbc-driver.jar</ic> precisa estar no caminho definido em <ic>connection.py</ic>.',
+      div0: '1 — instalar dependências localmente (uma vez)',
+      cmtVenv: '# Crie um ambiente virtual isolado — recomendado',
+      cmtInstall: '# Instale os pacotes da bridge JDBC',
+      div1: '2 — carregar .env e rodar com SQL via argumento',
+      p1: 'Passe o SQL diretamente como argumento. O script lê o <ic>.env</ic> automaticamente via <ic>python-dotenv</ic>.',
+      langBash: 'bash — sua máquina',
+      cmtInline: '# Rodar com SQL inline — sem editar arquivo',
+      div2: '3 — rodar com arquivo .sql',
+      p2: 'Escreva a query em um arquivo <ic>.sql</ic> para instruções longas ou multi-linha. Passe o nome do arquivo como argumento.',
+      langSqlFile: 'bash',
+      cmtSqlFile: '# query.sql pode ser qualquer caminho de arquivo',
+      div3: '4 — o script local (run_local.py)',
+      p3: 'Salve este script uma vez. Ele carrega o <ic>.env</ic> automaticamente, aceita SQL inline ou um caminho <ic>--file</ic>, e suporta três formatos de saída.',
+      cmtArgparse: '# run_local.py — executor local flexível de queries',
+      div4: 'exemplos de uso',
+      cmtUsage1: '# SQL inline',
+      cmtUsage2: '# De um arquivo .sql',
+      cmtUsage3: '# Saída em JSON',
+      cmtUsage4: '# CSV salvo em arquivo',
+      winNote: '<strong>Windows:</strong> use <ic>set</ic> para verificar variáveis de ambiente, ou use um arquivo <ic>.env</ic> — o <ic>python-dotenv</ic> carrega da mesma forma.',
+      javaHomeNote: '<strong>JAVA_HOME não definido?</strong> O JPype1 falhará com <ic>JVMNotFoundException</ic>. Defina permanentemente no perfil do seu shell: <ic>export JAVA_HOME=$(/usr/libexec/java_home -v 17)</ic> (macOS) ou adicione em <ic>/etc/environment</ic> (Linux).',
+    },
     prereqs: {
       stepNum: 'Etapa 01',
       title: 'Checklist de pré-requisitos',
@@ -665,7 +719,7 @@ Then update <ic>DRIVER_CLASS</ic> in <ic>connection.py</ic> to match.`
         { title: 'URL da instância ServiceNow confirmada',    desc: 'Você conhece o subdomínio da instância — ex.: <ic>minhaempresa.service-now.com</ic>' },
         { title: 'Conta de serviço criada com a role correta', desc: 'Um admin do ServiceNow criou a conta e atribuiu a role <ic>sn_jdbc_rest_access</ic>.' },
         { title: 'Filtro de IP da SQL API configurado',        desc: 'O IP de saída do container está listado nos critérios de filtro de IP da SQL API. Sem isso, toda tentativa de conexão será rejeitada silenciosamente.' },
-        { title: 'Driver JAR do JDBC baixado',                 desc: 'O arquivo <ic>servicenow-jdbc-driver.jar</ic> (ou nome similar) está na sua máquina e pronto para ser copiado para a imagem.' },
+        { title: 'Driver JAR do JDBC baixado',                 desc: 'O arquivo <ic>servicenow-jdbc-driver.jar</ic> (ou nome similar) está na sua máquina e pronto para ser copiado para a imagem. Baixe na <a href="https://store.servicenow.com/store/app/699af7c347404f90040ae738436d4350" target="_blank" rel="noopener" style="color:var(--blue);text-decoration:underline">ServiceNow Store → SQL API</a>.' },
         { title: 'Docker instalado e em execução',             desc: 'Execute <ic>docker info</ic> para confirmar que o daemon está ativo.' },
       ],
       warn: '<strong>Importante:</strong> Python não se comunica nativamente com JDBC — é um padrão Java. Este guia faz a ponte usando <strong>JayDeBeApi + JPype1</strong>, que inicializa uma JVM dentro do processo Python. O JDK 17 precisa estar presente no container.',
@@ -673,7 +727,7 @@ Then update <ic>DRIVER_CLASS</ic> in <ic>connection.py</ic> to match.`
     structure: {
       stepNum: 'Etapa 02', title: 'Estrutura do projeto',
       desc: 'Organize todos os arquivos conforme mostrado abaixo antes de fazer o build da imagem. O JAR precisa estar presente localmente para o Docker fazer o COPY.',
-      info: '<strong>Onde baixar o JAR:</strong> Na sua instância ServiceNow, acesse <ic>SQL API → Downloads</ic> (ou pesquise "SQL API drivers" no navegador). O arquivo é específico por instância — não compartilhe entre instâncias de versões diferentes.',
+      info: '<strong>Onde baixar o JAR:</strong> Obtenha na <a href="https://store.servicenow.com/store/app/699af7c347404f90040ae738436d4350" target="_blank" rel="noopener" style="color:var(--blue);text-decoration:underline">ServiceNow Store → SQL API</a>. Após instalar o app na sua instância, acesse <ic>SQL API → Downloads</ic> dentro do ServiceNow para baixar o arquivo do driver. O JAR é específico por instância — não compartilhe entre instâncias de versões diferentes.',
       warn: '<strong>Nunca faça commit do JAR no git.</strong> Adicione <ic>drivers/</ic> ao seu <ic>.gitignore</ic>. Ele contém código proprietário ServiceNow e pode conter configurações específicas da instância.',
       cmt1: '# helper de conexão', cmt2: '# seu código de aplicação', cmt3: '# ← baixar da sua instância SN',
     },
@@ -1223,7 +1277,151 @@ ${t.tables.map(tbl => `
 </div>`;
 }
 
-const CONTENT = [buildPrereqs, buildStructure, buildDockerfile, buildReqs, buildConnection, buildRun, buildVerify, buildTrouble, buildQueryRunner];
+function buildLocal() {
+  const t = T().local;
+  return `
+<div class="step-hdr">
+  <span class="step-num">${t.stepNum}</span>
+  <div><div class="step-title">${t.title}</div>
+  <div class="step-desc">${t.desc}</div></div>
+</div>
+<div class="alert a-info"><span class="ai">ℹ</span><span>${t.prereqBox}</span></div>
+
+<div class="sdiv">${t.div0}</div>
+<div class="cw">
+  <div class="ch"><span class="clang">bash</span><button class="copy-btn" onclick="copyCode(this)">${T().copy}</button></div>
+  <div class="cb"><span class="cmt">${t.cmtVenv}</span>
+python3 -m venv .venv
+source .venv/bin/activate   <span class="cmt"># Windows: .venv\\Scripts\\activate</span>
+
+<span class="cmt">${t.cmtInstall}</span>
+pip install JayDeBeApi==1.2.3 JPype1==1.5.0 python-dotenv</div>
+</div>
+
+<div class="sdiv">${t.div1}</div>
+<p>${t.p1}</p>
+<div class="cw">
+  <div class="ch"><span class="clang">${t.langBash}</span><button class="copy-btn" onclick="copyCode(this)">${T().copy}</button></div>
+  <div class="cb"><span class="cmt">${t.cmtInline}</span>
+python run_local.py --sql "SELECT number, short_description FROM incident LIMIT 5"</div>
+</div>
+
+<div class="sdiv">${t.div2}</div>
+<p>${t.p2}</p>
+<div class="cw">
+  <div class="ch"><span class="cfile">incident.sql</span><button class="copy-btn" onclick="copyCode(this)">${T().copy}</button></div>
+  <div class="cb">SELECT
+    number,
+    short_description,
+    state,
+    priority,
+    assigned_to
+FROM incident
+WHERE state != '7'
+ORDER BY sys_created_on DESC
+LIMIT 20</div>
+</div>
+<div class="cw">
+  <div class="ch"><span class="clang">${t.langSqlFile}</span><button class="copy-btn" onclick="copyCode(this)">${T().copy}</button></div>
+  <div class="cb"><span class="cmt">${t.cmtSqlFile}</span>
+python run_local.py --file incident.sql</div>
+</div>
+
+<div class="sdiv">${t.div3}</div>
+<p>${t.p3}</p>
+<div class="cw">
+  <div class="ch"><span class="cfile">run_local.py</span><button class="copy-btn" onclick="copyCode(this)">${T().copy}</button></div>
+  <div class="cb"><span class="cmt">${t.cmtArgparse}</span>
+<span class="kw">import</span> argparse, csv, json, os, sys
+<span class="kw">import</span> jaydebeapi
+<span class="kw">from</span> pathlib <span class="kw">import</span> Path
+<span class="kw">from</span> dotenv <span class="kw">import</span> load_dotenv
+
+<span class="cmt"># Auto-load .env from the current directory (silently ignored if missing)</span>
+load_dotenv()
+
+DRIVER = <span class="str">"com.servicenow.jdbc.Driver"</span>
+URL    = <span class="str">"<span data-tpl="url">jdbc:servicenow://https://mycompany.service-now.com</span>"</span>
+JAR    = <span class="str">"<span data-tpl="jar">/app/drivers/servicenow-jdbc-driver.jar</span>"</span>
+
+
+<span class="kw">def</span> <span class="fn">get_sql</span>(args) -> <span class="op">str</span>:
+    <span class="kw">if</span> args.file:
+        <span class="kw">return</span> Path(args.file).<span class="fn">read_text</span>().<span class="fn">strip</span>()
+    <span class="kw">if</span> args.sql:
+        <span class="kw">return</span> args.sql.<span class="fn">strip</span>()
+    <span class="cmt"># Fall back to reading query.py's SQL if no argument given</span>
+    <span class="kw">raise</span> <span class="fn">ValueError</span>(<span class="str">"Provide --sql 'SELECT ...' or --file query.sql"</span>)
+
+
+<span class="kw">def</span> <span class="fn">run_query</span>(sql: <span class="op">str</span>) -> <span class="fn">tuple</span>[<span class="op">list</span>, <span class="op">list</span>]:
+    user = os.environ[<span class="str">"SN_USER"</span>]
+    pw   = os.environ[<span class="str">"SN_PASS"</span>]
+    conn = jaydebeapi.<span class="fn">connect</span>(DRIVER, URL, [user, pw], JAR)
+    cur  = conn.<span class="fn">cursor</span>()
+    cur.<span class="fn">execute</span>(sql)
+    cols = [d[<span class="op">0</span>] <span class="kw">for</span> d <span class="kw">in</span> cur.description]
+    rows = cur.<span class="fn">fetchall</span>()
+    conn.<span class="fn">close</span>()
+    <span class="kw">return</span> cols, rows
+
+
+<span class="kw">def</span> <span class="fn">output</span>(cols, rows, fmt: <span class="op">str</span>, out_file=<span class="kw">None</span>):
+    <span class="kw">if</span> fmt == <span class="str">"json"</span>:
+        data = [<span class="fn">dict</span>(<span class="fn">zip</span>(cols, r)) <span class="kw">for</span> r <span class="kw">in</span> rows]
+        text = json.<span class="fn">dumps</span>(data, indent=<span class="op">2</span>, default=<span class="op">str</span>)
+        <span class="kw">if</span> out_file: Path(out_file).<span class="fn">write_text</span>(text)
+        <span class="kw">else</span>: <span class="fn">print</span>(text)
+    <span class="kw">elif</span> fmt == <span class="str">"csv"</span>:
+        dest = <span class="fn">open</span>(out_file, <span class="str">"w"</span>, newline=<span class="str">""</span>) <span class="kw">if</span> out_file <span class="kw">else</span> sys.stdout
+        w = csv.<span class="fn">writer</span>(dest)
+        w.<span class="fn">writerow</span>(cols)
+        w.<span class="fn">writerows</span>(rows)
+        <span class="kw">if</span> out_file: dest.<span class="fn">close</span>()
+    <span class="kw">else</span>:  <span class="cmt"># table (default)</span>
+        widths = [<span class="fn">max</span>(<span class="fn">len</span>(<span class="op">str</span>(c)), <span class="fn">max</span>((<span class="fn">len</span>(<span class="op">str</span>(r[i])) <span class="kw">for</span> r <span class="kw">in</span> rows), default=<span class="op">0</span>)) <span class="kw">for</span> i, c <span class="kw">in</span> <span class="fn">enumerate</span>(cols)]
+        sep = <span class="str">"+"</span> + <span class="str">"+"</span>.<span class="fn">join</span>(<span class="str">"-"</span> * (w + <span class="op">2</span>) <span class="kw">for</span> w <span class="kw">in</span> widths) + <span class="str">"+"</span>
+        row_fmt = <span class="kw">lambda</span> r: <span class="str">"|"</span> + <span class="str">"|"</span>.<span class="fn">join</span>(<span class="str">" "</span> + <span class="op">str</span>(v).<span class="fn">ljust</span>(w) + <span class="str">" "</span> <span class="kw">for</span> v, w <span class="kw">in</span> <span class="fn">zip</span>(r, widths)) + <span class="str">"|"</span>
+        <span class="fn">print</span>(sep); <span class="fn">print</span>(row_fmt(cols)); <span class="fn">print</span>(sep)
+        <span class="kw">for</span> r <span class="kw">in</span> rows: <span class="fn">print</span>(row_fmt(r))
+        <span class="fn">print</span>(sep)
+
+
+<span class="kw">if</span> __name__ == <span class="str">"__main__"</span>:
+    p = argparse.<span class="fn">ArgumentParser</span>(description=<span class="str">"Run a SQL query against ServiceNow JDBC"</span>)
+    p.<span class="fn">add_argument</span>(<span class="str">"--sql"</span>,    help=<span class="str">"SQL string inline"</span>)
+    p.<span class="fn">add_argument</span>(<span class="str">"--file"</span>,   help=<span class="str">"Path to a .sql file"</span>)
+    p.<span class="fn">add_argument</span>(<span class="str">"--format"</span>, choices=[<span class="str">"table"</span>, <span class="str">"json"</span>, <span class="str">"csv"</span>], default=<span class="str">"table"</span>)
+    p.<span class="fn">add_argument</span>(<span class="str">"--out"</span>,    help=<span class="str">"Save output to this file (optional)"</span>)
+    args = p.<span class="fn">parse_args</span>()
+    cols, rows = <span class="fn">run_query</span>(<span class="fn">get_sql</span>(args))
+    <span class="fn">output</span>(cols, rows, args.format, args.out)
+    <span class="fn">print</span>(<span class="str">f"\\n{len(rows)} row(s)."</span>, file=sys.stderr)</div>
+</div>
+
+<div class="sdiv">${t.div4}</div>
+<div class="cw">
+  <div class="ch"><span class="clang">bash</span><button class="copy-btn" onclick="copyCode(this)">${T().copy}</button></div>
+  <div class="cb"><span class="cmt">${t.cmtUsage1}</span>
+python run_local.py --sql "SELECT number FROM incident LIMIT 3"
+
+<span class="cmt">${t.cmtUsage2}</span>
+python run_local.py --file incident.sql
+
+<span class="cmt">${t.cmtUsage3}</span>
+python run_local.py --file incident.sql --format json
+
+<span class="cmt">${t.cmtUsage4}</span>
+python run_local.py --file incident.sql --format csv --out results.csv</div>
+</div>
+<div class="alert a-warn"><span class="ai">⚠</span><span>${t.winNote}</span></div>
+<div class="alert a-warn"><span class="ai">⚠</span><span>${t.javaHomeNote}</span></div>
+<div class="navbtns">
+  <button class="btn" onclick="goTo(8)">${T().back}</button>
+  <button class="btn btn-p" onclick="restart()">↺ ${T().restart.replace('↺ ','')}</button>
+</div>`;}
+
+const CONTENT = [buildPrereqs, buildStructure, buildDockerfile, buildReqs, buildConnection, buildRun, buildVerify, buildTrouble, buildQueryRunner, buildLocal];
 
 // ── .env helpers ────────────────────────────────────────
 function envContent() {
@@ -1308,7 +1506,7 @@ function render() {
     nav.className = 'navbtns';
     nav.innerHTML = `
       <button class="btn" onclick="goTo(${current-1})" ${current===0?'disabled':''}>${T().back}</button>
-      <button class="btn btn-p" onclick="advance()">${current===7 ? T().complete : T().next}</button>`;
+      <button class="btn btn-p" onclick="advance()">${current===9 ? T().complete : T().next}</button>`;
     mainEl.appendChild(nav);
   }
 
@@ -1318,8 +1516,8 @@ function render() {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-function goTo(i)  { if(i>=0 && i<9){ current=i; render(); saveProgress(); } }
-function advance(){ done.add(current); if(current<8){ current++; render(); saveProgress(); } }
+function goTo(i)  { if(i>=0 && i<10){ current=i; render(); saveProgress(); } }
+function advance(){ done.add(current); if(current<9){ current++; render(); saveProgress(); } }
 function restart(){ current=0; done.clear(); clearProgress(); render(); }
 
 function copyCode(btn) {
@@ -1478,6 +1676,7 @@ function zipFileList() {
     { name: 'query.py',        filled: true },
     { name: '.env.example',    filled: true },
     { name: '.gitignore',      filled: true },
+    { name: 'run_local.py',    filled: true },
     { name: '.env',            filled: hasCreds },
   ];
 }
@@ -1611,6 +1810,67 @@ docker run --rm --env-file .env \\
   sn-jdbc-app python query.py
 `;
 
+  const runLocalPy = `#!/usr/bin/env python3
+# run_local.py — run SQL queries locally against ServiceNow JDBC
+# Usage:  python run_local.py --sql "SELECT ..."
+#         python run_local.py --file query.sql
+#         python run_local.py --file query.sql --format json
+#         python run_local.py --file query.sql --format csv --out results.csv
+import argparse, csv, json, os, sys
+from pathlib import Path
+from dotenv import load_dotenv
+import jaydebeapi
+
+load_dotenv()  # reads .env from current directory
+
+DRIVER = "com.servicenow.jdbc.Driver"
+URL    = "jdbc:servicenow://https://${cfg.instance}.service-now.com"
+JAR    = "${cfg.jar}"
+
+def get_sql(args):
+    if args.file: return Path(args.file).read_text().strip()
+    if args.sql:  return args.sql.strip()
+    raise ValueError("Provide --sql 'SELECT ...' or --file query.sql")
+
+def run_query(sql):
+    conn = jaydebeapi.connect(DRIVER, URL, [os.environ["SN_USER"], os.environ["SN_PASS"]], JAR)
+    cur  = conn.cursor()
+    cur.execute(sql)
+    cols = [d[0] for d in cur.description]
+    rows = cur.fetchall()
+    conn.close()
+    return cols, rows
+
+def output(cols, rows, fmt, out_file=None):
+    if fmt == "json":
+        data = [dict(zip(cols, r)) for r in rows]
+        text = json.dumps(data, indent=2, default=str)
+        if out_file: Path(out_file).write_text(text)
+        else: print(text)
+    elif fmt == "csv":
+        dest = open(out_file, "w", newline="") if out_file else sys.stdout
+        w = csv.writer(dest)
+        w.writerow(cols); w.writerows(rows)
+        if out_file: dest.close()
+    else:
+        widths = [max(len(str(c)), max((len(str(r[i])) for r in rows), default=0)) for i, c in enumerate(cols)]
+        sep = "+" + "+".join("-" * (w + 2) for w in widths) + "+"
+        fmt_row = lambda r: "|" + "|".join(" " + str(v).ljust(w) + " " for v, w in zip(r, widths)) + "|"
+        print(sep); print(fmt_row(cols)); print(sep)
+        for r in rows: print(fmt_row(r))
+        print(sep)
+
+if __name__ == "__main__":
+    p = argparse.ArgumentParser(description="Run SQL against ServiceNow JDBC")
+    p.add_argument("--sql");  p.add_argument("--file")
+    p.add_argument("--format", choices=["table","json","csv"], default="table")
+    p.add_argument("--out")
+    args = p.parse_args()
+    cols, rows = run_query(get_sql(args))
+    output(cols, rows, args.format, args.out)
+    print(f"\n{len(rows)} row(s).", file=sys.stderr)
+`;
+
   try {
     const zip = new JSZip();
     zip.file('Dockerfile',        dockerfile);
@@ -1618,6 +1878,7 @@ docker run --rm --env-file .env \\
     zip.file('connection.py',     connectionPy);
     zip.file('query.py',          queryPy);
     zip.file('run_query.sh',      runQuerySh);
+    zip.file('run_local.py',      runLocalPy);
     zip.file('.env.example',      envExample);
     zip.file('.gitignore',        gitignore);
     if (cfg.pass) zip.file('.env', envFile);
@@ -1653,9 +1914,11 @@ function saveProgress() {
   try {
     const state = {
       current,
-      done: [...done],
       lang,
       cfg: { instance: cfg.instance, user: cfg.user, jar: cfg.jar },
+      // done is intentionally NOT saved — steps marked as complete
+      // were just navigation clicks, not real completions.
+      // They reset on every page load so the guide always starts clean.
     };
     localStorage.setItem(LS_KEY, JSON.stringify(state));
     const dot = document.getElementById('persistDot');
@@ -1668,7 +1931,9 @@ function loadProgress() {
     const raw = localStorage.getItem(LS_KEY);
     if (!raw) return;
     const state = JSON.parse(raw);
-    if (state.done)     state.done.forEach(i => done.add(i));
+    // done is NOT restored — steps always start unmarked on fresh load.
+    // Also strip any legacy "done" key that may have been saved by older versions.
+    if (state.done) { delete state.done; localStorage.setItem(LS_KEY, JSON.stringify(state)); }
     if (state.current !== undefined) current = state.current;
     if (state.lang)     lang = state.lang;
     if (state.cfg) {
