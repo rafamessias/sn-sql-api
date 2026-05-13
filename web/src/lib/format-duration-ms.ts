@@ -15,24 +15,24 @@ export const formatRunningClock = (ms: number): string => {
 export const formatDurationMs = (ms: number): string => {
   const total = Math.max(0, Math.round(Number(ms)) || 0);
   if (total < 1000) {
-    return `${total} ms`;
+    return `${total}ms`;
   }
   const wholeSeconds = Math.floor(total / 1000);
   const remainderMs = total % 1000;
   if (wholeSeconds < 60) {
     return remainderMs === 0
-      ? `${wholeSeconds} s`
-      : `${wholeSeconds} s ${remainderMs} ms`;
+      ? `${wholeSeconds}s`
+      : `${wholeSeconds}s ${remainderMs}ms`;
   }
   const minutes = Math.floor(wholeSeconds / 60);
   const sec = wholeSeconds % 60;
   const parts: string[] = [];
-  parts.push(minutes === 1 ? "1 min" : `${minutes} min`);
+  parts.push(`${minutes}m`);
   if (sec > 0) {
-    parts.push(sec === 1 ? "1 s" : `${sec} s`);
+    parts.push(`${sec}s`);
   }
   if (remainderMs > 0) {
-    parts.push(`${remainderMs} ms`);
+    parts.push(`${remainderMs}ms`);
   }
   return parts.join(" ");
 };

@@ -1,16 +1,20 @@
 import { useCallback, useEffect, useMemo, useState } from "preact/hooks";
 import { Header } from "./components/header";
-import { Tabs, type TabId } from "./components/tabs";
+import { Tabs } from "./components/tabs";
 import { EditorPanel } from "./components/editor-panel";
 import { SchemaPanel } from "./components/schema-panel";
 import { ConnectionsPanel } from "./components/connections-panel";
+import { EasterEgg } from "./components/easter-egg";
+import { Footer } from "./components/footer";
+import { LogsPanel } from "./components/logs-panel";
 import { useConnections } from "./hooks/use-connections";
+import { useConsoleTab } from "./hooks/use-console-tab";
 import { useEditorTabs } from "./hooks/use-editor-tabs";
 import { deriveTabName } from "./lib/editor-tabs";
 import { SERVER_DEFAULT_ID, connectionInstanceLabel, toPayload } from "./lib/connections";
 
 export const App = () => {
-  const [activeTab, setActiveTab] = useState<TabId>("editor");
+  const [activeTab, setActiveTab] = useConsoleTab();
   const [schemaTables, setSchemaTables] = useState<string[]>([]);
 
   const {
@@ -93,6 +97,7 @@ export const App = () => {
           { id: "editor", label: "Editor", badge: editorTabs.length },
           { id: "schema", label: "Schema" },
           { id: "connections", label: "Connections", badge: connections.length },
+          { id: "logs", label: "Logs" },
         ]}
       />
 
@@ -133,7 +138,12 @@ export const App = () => {
             onMergeImport={mergeImport}
           />
         )}
+
+        {activeTab === "logs" && <LogsPanel />}
       </main>
+
+      <Footer />
+      <EasterEgg />
     </div>
   );
 };

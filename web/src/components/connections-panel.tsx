@@ -1,4 +1,4 @@
-import { useRef, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { JSX } from "preact";
 import { ConnectionForm } from "./connection-form";
 import {
@@ -9,6 +9,7 @@ import {
   type ConnectionFormState,
   type SavedConnection,
 } from "../lib/connections";
+import { fetchEgressIp, type EgressIpInfo } from "../lib/api";
 import { cn } from "../lib/cn";
 
 type ConnectionsPanelProps = {
@@ -25,6 +26,36 @@ type Notice =
   | { kind: "ok"; message: string }
   | { kind: "error"; message: string }
   | null;
+
+type EgressState =
+  | { status: "loading" }
+  | { status: "ok"; ip: string }
+  | { status: "error"; message: string };
+
+const egressStateFromApi = (data: EgressIpInfo): EgressState => {
+  if (data.ip) return { status: "ok", ip: data.ip };
+  if (data.error) return { status: "error", message: data.error };
+  return {
+    status: "error",
+    message: "No address returned from server.",
+  };
+};
+
+const runEgressLookup = async (
+  signal: AbortSignal,
+  setEgress: (next: EgressState) => void,
+): Promise<void> => {
+  setEgress({ status: "loading" });
+  try {
+    const data = await fetchEgressIp(signal);
+    if (signal.aborted) return;
+    setEgress(egressStateFromApi(data));
+  } catch (err) {
+    if (signal.aborted) return;
+    const message = err instanceof Error ? err.message : String(err);
+    setEgress({ status: "error", message });
+  }
+};
 
 const downloadJson = (filename: string, content: string) => {
   const blob = new Blob([content], { type: "application/json" });
@@ -50,7 +81,38 @@ export const ConnectionsPanel = ({
   const [editing, setEditing] = useState<SavedConnection | null>(null);
   const [showForm, setShowForm] = useState<boolean>(connections.length === 0);
   const [notice, setNotice] = useState<Notice>(null);
+  const [pendingDelete, setPendingDelete] = useState<SavedConnection | null>(
+    null,
+  );
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const deleteCancelRef = useRef<HTMLButtonElement | null>(null);
+  const [egress, setEgress] = useState<EgressState>({ status: "loading" });
+  const [egressCopied, setEgressCopied] = useState<boolean>(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void runEgressLookup(controller.signal, setEgress);
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    if (!egressCopied) return;
+    const t = window.setTimeout(() => setEgressCopied(false), 2000);
+    return () => window.clearTimeout(t);
+  }, [egressCopied]);
+
+  useEffect(() => {
+    if (!pendingDelete) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setPendingDelete(null);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [pendingDelete]);
+
+  useLayoutEffect(() => {
+    if (pendingDelete) deleteCancelRef.current?.focus();
+  }, [pendingDelete]);
 
   const handleSubmit = (form: ConnectionFormState) => {
     if (editing) {
@@ -139,6 +201,70 @@ export const ConnectionsPanel = ({
         <span class="ml-auto font-mono text-[11px] text-subtle">
           stored in browser localStorage · not synced
         </span>
+      </div>
+
+      <div class="rounded-lg border border-border bg-surface-2 px-4 py-3 font-mono text-[12px] text-text">
+        <div class="flex flex-wrap items-center gap-2 gap-y-1">
+          <span class="text-subtle">Outbound IP (for instance allow list)</span>
+          {egress.status === "loading" && (
+            <span class="text-muted">looking up…</span>
+          )}
+          {egress.status === "ok" && (
+            <>
+              <code class="rounded border border-border bg-surface px-2 py-0.5 text-info">
+                {egress.ip}
+              </code>
+              <button
+                type="button"
+                class="btn"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(egress.ip);
+                    setEgressCopied(true);
+                  } catch {
+                    setNotice({
+                      kind: "error",
+                      message: "Could not copy to clipboard.",
+                    });
+                  }
+                }}
+              >
+                {egressCopied ? "Copied" : "Copy"}
+              </button>
+              <button
+                type="button"
+                class="btn"
+                onClick={() => {
+                  const controller = new AbortController();
+                  void runEgressLookup(controller.signal, setEgress);
+                }}
+              >
+                Refresh
+              </button>
+            </>
+          )}
+          {egress.status === "error" && (
+            <>
+              <span class="text-danger">{egress.message}</span>
+              <button
+                type="button"
+                class="btn"
+                onClick={() => {
+                  const controller = new AbortController();
+                  void runEgressLookup(controller.signal, setEgress);
+                }}
+              >
+                Retry
+              </button>
+            </>
+          )}
+        </div>
+        <p class="mt-2 text-[11px] leading-relaxed text-muted">
+          This is the public address this API server uses for outbound HTTPS
+          from its deployment (same NAT as typical JDBC traffic). Add it to your
+          ServiceNow instance network allow list if required—not your laptop
+          browser address.
+        </p>
       </div>
 
       {notice && (
@@ -242,19 +368,7 @@ export const ConnectionsPanel = ({
                     <button
                       type="button"
                       class="btn"
-                      onClick={() => {
-                        if (
-                          window.confirm(
-                            `Delete connection ${label}? This cannot be undone.`,
-                          )
-                        ) {
-                          onRemove(entry.id);
-                          setNotice({
-                            kind: "ok",
-                            message: `Deleted ${label}.`,
-                          });
-                        }
-                      }}
+                      onClick={() => setPendingDelete(entry)}
                     >
                       Delete
                     </button>
@@ -272,6 +386,63 @@ export const ConnectionsPanel = ({
         ({SERVER_DEFAULT_ID === activeId ? "active" : "available"}) keeps
         secrets in <code>.env</code> only.
       </div>
+
+      {pendingDelete && (
+        <div
+          class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          role="presentation"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setPendingDelete(null);
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-connection-title"
+            class="w-full max-w-md rounded-lg border border-border bg-surface p-4 shadow-lg"
+          >
+            <h2
+              id="delete-connection-title"
+              class="font-mono text-sm font-medium text-text"
+            >
+              Delete connection?
+            </h2>
+            <p class="mt-2 font-mono text-[12px] text-muted">
+              Remove{" "}
+              <span class="text-text">
+                {connectionInstanceLabel(pendingDelete)}
+              </span>
+              . This cannot be undone.
+            </p>
+            <div class="mt-4 flex flex-wrap justify-end gap-2">
+              <button
+                ref={deleteCancelRef}
+                type="button"
+                class="btn"
+                onClick={() => setPendingDelete(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                class={cn(
+                  "btn border-danger/50 bg-danger/10 text-danger",
+                  "hover:border-danger hover:bg-danger/20 hover:text-danger",
+                  "focus-visible:ring-danger",
+                )}
+                onClick={() => {
+                  const label = connectionInstanceLabel(pendingDelete);
+                  onRemove(pendingDelete.id);
+                  setPendingDelete(null);
+                  setNotice({ kind: "ok", message: `Deleted ${label}.` });
+                }}
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 };

@@ -9,6 +9,7 @@ import {
 import type { ConnectionPayload } from "../lib/connections";
 import { buildSelectSql, parseExpressions } from "../lib/query-builder-sql";
 import { cn } from "../lib/cn";
+import { SchemaSnippetEditor } from "./schema-snippet-editor";
 
 type ColumnSortMode = "default" | "asc" | "desc";
 
@@ -70,7 +71,7 @@ export const SchemaPanel = ({
   const [whereClause, setWhereClause] = useState("");
   const [orderBy, setOrderBy] = useState("");
   const [orderDir, setOrderDir] = useState<"ASC" | "DESC">("ASC");
-  const [limit, setLimit] = useState<number | null>(100);
+  const [limit, setLimit] = useState<number | null>(10);
 
   const columnCacheRef = useRef<Map<string, ColumnCache>>(new Map());
   const tableCacheRef = useRef<Map<string, TableInfo[]>>(new Map());
@@ -155,8 +156,11 @@ export const SchemaPanel = ({
 
       const cacheForConnection =
         columnCacheRef.current.get(payloadKey) ?? {};
-      if (cacheForConnection[table]) {
-        setColumns(cacheForConnection[table]);
+      const cachedCols = cacheForConnection[table];
+      // Empty arrays are truthy in JS — never treat a cached [] as a hit or it
+      // skips refetch forever after one failed or dictionary-empty response.
+      if (Array.isArray(cachedCols) && cachedCols.length > 0) {
+        setColumns(cachedCols);
         setColumnsPhase("ready");
         setColumnsError(null);
         return;
@@ -175,10 +179,12 @@ export const SchemaPanel = ({
           null,
           controller.signal,
         );
-        const nextCache = {
-          ...cacheForConnection,
-          [table]: data.columns,
-        };
+        const nextCache = { ...cacheForConnection };
+        if (data.columns.length > 0) {
+          nextCache[table] = data.columns;
+        } else {
+          delete nextCache[table];
+        }
         columnCacheRef.current.set(payloadKey, nextCache);
         setColumns(data.columns);
         setColumnsPhase("ready");
@@ -251,6 +257,11 @@ export const SchemaPanel = ({
   const expressions = useMemo(
     () => parseExpressions(functionsText),
     [functionsText],
+  );
+
+  const schemaColumnNames = useMemo(
+    () => columns.map((c) => c.name),
+    [columns],
   );
 
   const generatedSql = useMemo(
@@ -468,7 +479,7 @@ export const SchemaPanel = ({
                             class="grid w-full items-center gap-2 font-mono text-[10px] uppercase tracking-wide text-subtle"
                             style={{
                               gridTemplateColumns:
-                                "1rem minmax(0,1fr) minmax(5rem,9rem) minmax(3.5rem,5rem) auto",
+                                "1rem minmax(0,1fr) minmax(5rem,9rem) auto",
                             }}
                           >
                             <span aria-hidden="true" />
@@ -493,7 +504,6 @@ export const SchemaPanel = ({
                             >
                               Type
                             </span>
-                            <span class="text-center">Function field</span>
                             <span aria-hidden="true" />
                           </div>
                         </li>
@@ -519,7 +529,7 @@ export const SchemaPanel = ({
                                 )}
                                 style={{
                                   gridTemplateColumns:
-                                    "1rem minmax(0,1fr) minmax(5rem,9rem) minmax(3.5rem,5rem) auto",
+                                    "1rem minmax(0,1fr) minmax(5rem,9rem) auto",
                                 }}
                               >
                                 <span
@@ -546,10 +556,10 @@ export const SchemaPanel = ({
                                     )}
                                     title={
                                       entry.internal_type
-                                        ? `internal_type: ${entry.internal_type} · JDBC: ${entry.type}`
+                                        ? `internal_type: ${entry.internal_type} · display: ${entry.type}`
                                         : entry.field_type
-                                          ? `JDBC: ${entry.type}`
-                                          : `JDBC SQL type: ${entry.type}`
+                                          ? `display: ${entry.type}`
+                                          : `type: ${entry.type}`
                                     }
                                   >
                                     {displayType}
@@ -557,21 +567,11 @@ export const SchemaPanel = ({
                                 ) : (
                                   <span
                                     class="text-[11px] text-subtle"
-                                    title="No type from dictionary or JDBC"
+                                    title="No type from dictionary"
                                   >
                                     —
                                   </span>
                                 )}
-                                <span
-                                  class="text-center font-mono text-[11px] text-muted"
-                                  title="sys_dictionary.function_field"
-                                >
-                                  {entry.function_field === true
-                                    ? "true"
-                                    : entry.function_field === false
-                                      ? "false"
-                                      : "—"}
-                                </span>
                                 {!entry.nullable ? (
                                   <span class="text-[10px] text-warn">
                                     NOT NULL
@@ -593,7 +593,13 @@ export const SchemaPanel = ({
                 </div>
 
                 <div class="flex min-h-0 flex-col gap-3 overflow-auto rounded-lg border border-border bg-surface p-3">
-                  <span class="font-mono text-[11px] text-subtle">Filters</span>
+                  <div class="flex flex-col gap-0.5">
+                    <span class="font-mono text-[11px] text-subtle">Filters</span>
+                    <span class="font-mono text-[10px] text-subtle/80">
+                      Ctrl+Space (⌃Space): SQL keywords and columns for the
+                      selected table
+                    </span>
+                  </div>
 
                   <label class="flex flex-col gap-1">
                     <span class="flex flex-wrap items-center gap-2 font-mono text-[11px] uppercase tracking-wider text-subtle">
@@ -605,18 +611,15 @@ export const SchemaPanel = ({
                         </code>
                       </span>
                     </span>
-                    <textarea
-                      rows={3}
-                      class="block w-full resize-y rounded-md border border-border bg-bg px-3 py-2 font-mono text-[12px] text-text placeholder:text-subtle focus:border-accent focus:shadow-focus focus:outline-none"
-                      placeholder={"COUNT(*) AS total\nMAX(priority) AS top_priority"}
+                    <SchemaSnippetEditor
                       value={functionsText}
-                      onInput={(e) =>
-                        setFunctionsText(
-                          (e.target as HTMLTextAreaElement).value,
-                        )
+                      onChange={setFunctionsText}
+                      placeholder={
+                        "COUNT(*) AS total\nMAX(priority) AS top_priority"
                       }
-                      spellcheck={false}
-                      autocapitalize="off"
+                      schemaTable={activeTable}
+                      columnNames={schemaColumnNames}
+                      aria-label="SELECT expressions, one per line"
                     />
                   </label>
 
@@ -624,16 +627,13 @@ export const SchemaPanel = ({
                     <span class="font-mono text-[11px] uppercase tracking-wider text-subtle">
                       where
                     </span>
-                    <textarea
-                      rows={3}
-                      class="block w-full resize-y rounded-md border border-border bg-bg px-3 py-2 font-mono text-[12px] text-text placeholder:text-subtle focus:border-accent focus:shadow-focus focus:outline-none"
-                      placeholder="priority = 1 AND active = true"
+                    <SchemaSnippetEditor
                       value={whereClause}
-                      onInput={(e) =>
-                        setWhereClause(
-                          (e.target as HTMLTextAreaElement).value,
-                        )
-                      }
+                      onChange={setWhereClause}
+                      placeholder="priority = 1 AND active = true"
+                      schemaTable={activeTable}
+                      columnNames={schemaColumnNames}
+                      aria-label="WHERE clause"
                     />
                   </label>
 

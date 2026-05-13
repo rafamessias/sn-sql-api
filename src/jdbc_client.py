@@ -175,23 +175,64 @@ def _coerce_optional_str(value: Any) -> str | None:
     return text or None
 
 
-def _coerce_optional_bool(value: Any) -> bool | None:
-    """Maps JDBC / Java driver values to ``bool`` or ``None`` (unknown / unread)."""
+def _coerce_optional_bool(value: Any, *, bit: bool = False) -> bool | None:
+    """Maps JDBC / Java driver values to ``bool`` or ``None`` (unknown / unread).
+
+    When ``bit`` is True, only ``0`` / ``1`` (and bool/string equivalents) count as
+    boolean values; other integers return ``None``. Use for SN flags like
+    ``mandatory`` so a stray numeric in the wrong slot does not become ``True``.
+    """
 
     if value is None:
         return None
+    if isinstance(value, (bytes, bytearray)):
+        try:
+            value = value.decode("utf-8")
+        except Exception:
+            return None
     if isinstance(value, bool):
         return value
     # ``bool`` is a subclass of ``int`` in Python; handle real ints only.
     if type(value) is int or type(value) is float:
-        return bool(int(value))
+        n = int(value)
+        if bit:
+            if n == 0:
+                return False
+            if n == 1:
+                return True
+            return None
+        return bool(n)
     try:
         from decimal import Decimal
 
         if isinstance(value, Decimal):
-            return bool(int(value))
+            n = int(value)
+            if bit:
+                if n == 0:
+                    return False
+                if n == 1:
+                    return True
+                return None
+            return bool(n)
     except ImportError:
         pass
+    # JayDeBeApi often returns ``java.lang.Integer`` / ``Long`` (not ``type(...) is int``).
+    if not isinstance(value, (str, bytes, bytearray)):
+        try:
+            n = int(value)
+        except (TypeError, ValueError, OverflowError):
+            pass
+        else:
+            if bit:
+                if n == 0:
+                    return False
+                if n == 1:
+                    return True
+                return None
+            if n == 0:
+                return False
+            if n == 1:
+                return True
     lowered = str(value).strip().lower()
     if lowered in ("true", "t", "1", "yes", "y", "on"):
         return True
@@ -219,7 +260,7 @@ def _fetch_parent_table_name(conn: Any, table: str) -> str | None:
     query = _sanitize_query(
         "SELECT parent.name FROM sys_db_object child "
         "LEFT JOIN sys_db_object parent ON child.super_class = parent.sys_id "
-        "WHERE child.name = ?",
+        "WHERE LOWER(child.name) = LOWER(?)",
     )
     try:
         curs = conn.cursor()
@@ -279,12 +320,8 @@ def _cursor_query(
 def _dictionary_select_indices(
     col_names: list[str],
     sample_row: Any,
-) -> tuple[int, int, int, int] | None:
-    """Maps result columns to element, internal_type, function_field, table name.
-
-    ServiceNow JDBC often reorders or re-labels ``cursor.description``; we SELECT
-    with fixed aliases ``sn_el`` … ``sn_nm`` so mapping stays stable.
-    """
+) -> tuple[int, int, int] | None:
+    """Maps result columns to element, internal_type, dictionary table name."""
 
     lowered = [str(c).lower() for c in col_names] if col_names else []
 
@@ -293,23 +330,27 @@ def _dictionary_select_indices(
             for i, cn in enumerate(lowered):
                 if cn == alias:
                     return i
+        for alias in aliases:
+            for i, cn in enumerate(lowered):
+                tail = cn.rsplit(".", 1)[-1]
+                if tail == alias:
+                    return i
         return None
 
     el_i = find_one("sn_el")
     it_i = find_one("sn_it")
-    ff_i = find_one("sn_ff")
     nm_i = find_one("sn_nm")
-    if None not in (el_i, it_i, ff_i, nm_i):
-        return el_i, it_i, ff_i, nm_i
+    if None not in (el_i, it_i, nm_i):
+        return el_i, it_i, nm_i
 
     el_i = find_one("element")
     it_i = find_one("internal_type")
-    ff_i = find_one("function_field")
     nm_i = find_one("dict_tab", "dict_table", "name")
-    if None not in (el_i, it_i, ff_i, nm_i):
-        return el_i, it_i, ff_i, nm_i
-    if sample_row is not None and len(sample_row) >= 4:
-        return 0, 1, 2, 3
+    if None not in (el_i, it_i, nm_i):
+        return el_i, it_i, nm_i
+
+    if sample_row is not None and len(sample_row) >= 3:
+        return 0, 1, 2
     return None
 
 
@@ -371,12 +412,12 @@ def _load_sys_dictionary_rows(
     chain: list[str],
     table: str,
 ) -> list[tuple[Any, ...]]:
-    """Returns dictionary rows as tuples; prefers ``name IN (…)``, then fallbacks."""
+    """Returns ``(element, internal_type, dict_table_name)`` tuples from ``sys_dictionary``."""
 
     placeholders = ", ".join(["?"] * len(chain))
     primary_sql = _sanitize_query(
         "SELECT sys_dictionary.element AS sn_el, sys_dictionary.internal_type AS sn_it, "
-        "sys_dictionary.function_field AS sn_ff, sys_dictionary.name AS sn_nm "
+        "sys_dictionary.name AS sn_nm "
         "FROM sys_dictionary "
         "WHERE sys_dictionary.element IS NOT NULL "
         "AND (sys_dictionary.inactive = 0 OR sys_dictionary.inactive IS NULL) "
@@ -389,8 +430,22 @@ def _load_sys_dictionary_rows(
         col_names, raw_rows = res
 
     if not raw_rows:
+        lower_in_placeholders = ", ".join(["LOWER(?)"] * len(chain))
+        lower_in_sql = _sanitize_query(
+            "SELECT sys_dictionary.element AS sn_el, sys_dictionary.internal_type AS sn_it, "
+            "sys_dictionary.name AS sn_nm "
+            "FROM sys_dictionary "
+            "WHERE sys_dictionary.element IS NOT NULL "
+            "AND (sys_dictionary.inactive = 0 OR sys_dictionary.inactive IS NULL) "
+            f"AND LOWER(sys_dictionary.name) IN ({lower_in_placeholders})",
+        )
+        res = _cursor_query(conn, lower_in_sql, chain)
+        if res:
+            col_names, raw_rows = res
+
+    if not raw_rows:
         plain_in_sql = _sanitize_query(
-            "SELECT element AS sn_el, internal_type AS sn_it, function_field AS sn_ff, name AS sn_nm "
+            "SELECT element AS sn_el, internal_type AS sn_it, name AS sn_nm "
             "FROM sys_dictionary "
             "WHERE element IS NOT NULL "
             "AND (inactive = 0 OR inactive IS NULL) "
@@ -403,7 +458,7 @@ def _load_sys_dictionary_rows(
     if not raw_rows:
         fallback_sql = _sanitize_query(
             "SELECT sys_dictionary.element AS sn_el, sys_dictionary.internal_type AS sn_it, "
-            "sys_dictionary.function_field AS sn_ff, sys_dictionary.name AS sn_nm "
+            "sys_dictionary.name AS sn_nm "
             "FROM sys_dictionary "
             "WHERE sys_dictionary.element IS NOT NULL "
             "AND (sys_dictionary.inactive = 0 OR sys_dictionary.inactive IS NULL) "
@@ -416,7 +471,7 @@ def _load_sys_dictionary_rows(
     if not raw_rows:
         lower_sql = _sanitize_query(
             "SELECT sys_dictionary.element AS sn_el, sys_dictionary.internal_type AS sn_it, "
-            "sys_dictionary.function_field AS sn_ff, sys_dictionary.name AS sn_nm "
+            "sys_dictionary.name AS sn_nm "
             "FROM sys_dictionary "
             "WHERE sys_dictionary.element IS NOT NULL "
             "AND (sys_dictionary.inactive = 0 OR sys_dictionary.inactive IS NULL) "
@@ -428,7 +483,7 @@ def _load_sys_dictionary_rows(
 
     if not raw_rows:
         plain_lower_sql = _sanitize_query(
-            "SELECT element AS sn_el, internal_type AS sn_it, function_field AS sn_ff, name AS sn_nm "
+            "SELECT element AS sn_el, internal_type AS sn_it, name AS sn_nm "
             "FROM sys_dictionary "
             "WHERE element IS NOT NULL "
             "AND (inactive = 0 OR inactive IS NULL) "
@@ -439,27 +494,457 @@ def _load_sys_dictionary_rows(
             col_names, raw_rows = res
 
     if not raw_rows:
+        no_inactive_in_sql = _sanitize_query(
+            "SELECT sys_dictionary.element AS sn_el, sys_dictionary.internal_type AS sn_it, "
+            "sys_dictionary.name AS sn_nm "
+            "FROM sys_dictionary "
+            "WHERE sys_dictionary.element IS NOT NULL "
+            f"AND sys_dictionary.name IN ({placeholders})",
+        )
+        res = _cursor_query(conn, no_inactive_in_sql, chain)
+        if res:
+            col_names, raw_rows = res
+
+    if not raw_rows:
+        plain_no_inactive_in = _sanitize_query(
+            "SELECT element AS sn_el, internal_type AS sn_it, name AS sn_nm "
+            "FROM sys_dictionary "
+            "WHERE element IS NOT NULL "
+            f"AND name IN ({placeholders})",
+        )
+        res = _cursor_query(conn, plain_no_inactive_in, chain)
+        if res:
+            col_names, raw_rows = res
+
+    if not raw_rows:
+        plain_lower_in = ", ".join(["LOWER(?)"] * len(chain))
+        no_inactive_lower_in = _sanitize_query(
+            "SELECT element AS sn_el, internal_type AS sn_it, name AS sn_nm "
+            "FROM sys_dictionary "
+            "WHERE element IS NOT NULL "
+            f"AND LOWER(name) IN ({plain_lower_in})",
+        )
+        res = _cursor_query(conn, no_inactive_lower_in, chain)
+        if res:
+            col_names, raw_rows = res
+
+    if not raw_rows:
+        no_inactive_eq = _sanitize_query(
+            "SELECT sys_dictionary.element AS sn_el, sys_dictionary.internal_type AS sn_it, "
+            "sys_dictionary.name AS sn_nm "
+            "FROM sys_dictionary "
+            "WHERE sys_dictionary.element IS NOT NULL "
+            "AND sys_dictionary.name = ?",
+        )
+        res = _cursor_query(conn, no_inactive_eq, [table.strip()])
+        if res:
+            col_names, raw_rows = res
+
+    if not raw_rows:
+        plain_no_inactive_lower = _sanitize_query(
+            "SELECT element AS sn_el, internal_type AS sn_it, name AS sn_nm "
+            "FROM sys_dictionary "
+            "WHERE element IS NOT NULL "
+            "AND LOWER(name) = LOWER(?)",
+        )
+        res = _cursor_query(conn, plain_no_inactive_lower, [table.strip()])
+        if res:
+            col_names, raw_rows = res
+
+    if not raw_rows:
         return []
 
     sample = raw_rows[0]
     idx = _dictionary_select_indices(col_names, sample)
     if idx is None:
-        return []
-
-    el_i, it_i, ff_i, dt_i = idx
+        try:
+            ncols = len(sample)
+        except TypeError:
+            ncols = 0
+        if ncols >= 3:
+            el_i, it_i, dt_i = 0, 1, 2
+        else:
+            return []
+    else:
+        el_i, it_i, dt_i = idx
+    idx_max = max(el_i, it_i, dt_i)
     normalized: list[tuple[Any, ...]] = []
     for row in raw_rows:
-        if len(row) <= max(el_i, it_i, ff_i, dt_i):
+        if len(row) <= idx_max:
             continue
-        normalized.append(
-            (
-                row[el_i],
-                row[it_i],
-                row[ff_i],
-                row[dt_i],
-            )
-        )
+        normalized.append((row[el_i], row[it_i], row[dt_i]))
     return normalized
+
+
+def _wide_cursor_rows_to_dicts(
+    col_names: list[str],
+    raw_rows: list[Any],
+) -> list[dict[str, Any]]:
+    """Maps a JDBC result to canonical per-row dicts for dictionary-first listing."""
+
+    def row_from_tails(tails: dict[str, Any]) -> dict[str, Any] | None:
+        element = _coerce_optional_str(tails.get("sn_el") or tails.get("element"))
+        if not element:
+            return None
+        return {
+            "element": element,
+            "dict_table": _coerce_optional_str(
+                tails.get("sn_dt") or tails.get("sn_nm") or tails.get("name"),
+            ),
+            "internal_type": _coerce_optional_str(
+                tails.get("sn_it") or tails.get("internal_type"),
+            ),
+            "max_length": tails.get("sn_ml") if "sn_ml" in tails else tails.get("max_length"),
+            "mandatory": tails.get("sn_mq") if "sn_mq" in tails else tails.get("mandatory"),
+            "read_only": tails.get("sn_ro") if "sn_ro" in tails else tails.get("read_only"),
+            "reference": _coerce_optional_str(
+                tails.get("sn_rf") or tails.get("reference"),
+            ),
+            "column_label": _coerce_optional_str(
+                tails.get("sn_lb") or tails.get("column_label"),
+            ),
+        }
+
+    def row_positional(row: Any) -> dict[str, Any] | None:
+        """When metadata labels omit our aliases, match column order from our SELECTs."""
+
+        if not row:
+            return None
+        n = len(row)
+        # Wide / plain-wide: element, table, internal_type, max_length, mandatory,
+        # read_only, reference, column_label
+        if n >= 8:
+            el = _coerce_optional_str(row[0])
+            if not el:
+                return None
+            return {
+                "element": el,
+                "dict_table": _coerce_optional_str(row[1]),
+                "internal_type": _coerce_optional_str(row[2]),
+                "max_length": row[3],
+                "mandatory": row[4],
+                "read_only": row[5],
+                "reference": _coerce_optional_str(row[6]),
+                "column_label": _coerce_optional_str(row[7]),
+            }
+        # Slim: same without read_only / column_label
+        if n >= 6:
+            el = _coerce_optional_str(row[0])
+            if not el:
+                return None
+            return {
+                "element": el,
+                "dict_table": _coerce_optional_str(row[1]),
+                "internal_type": _coerce_optional_str(row[2]),
+                "max_length": row[3],
+                "mandatory": row[4],
+                "read_only": None,
+                "reference": _coerce_optional_str(row[5]),
+                "column_label": None,
+            }
+        # Minimal: element, table name, internal_type (matches ``_load_sys_dictionary_rows`` order)
+        if n >= 3:
+            el = _coerce_optional_str(row[0])
+            if not el:
+                return None
+            return {
+                "element": el,
+                "dict_table": _coerce_optional_str(row[1]),
+                "internal_type": _coerce_optional_str(row[2]),
+                "max_length": None,
+                "mandatory": None,
+                "read_only": None,
+                "reference": None,
+                "column_label": None,
+            }
+        return None
+
+    out: list[dict[str, Any]] = []
+    for row in raw_rows:
+        if not row:
+            continue
+        tails: dict[str, Any] = {}
+        for i, cn in enumerate(col_names):
+            if i >= len(row):
+                break
+            tail = str(cn).lower().rsplit(".", 1)[-1]
+            tails[tail] = row[i]
+        mapped = row_from_tails(tails)
+        if mapped is None:
+            mapped = row_positional(row)
+        if mapped is not None:
+            out.append(mapped)
+    return out
+
+
+def _load_sys_dictionary_column_dicts(
+    conn: Any,
+    chain: list[str],
+    table: str,
+) -> list[dict[str, Any]]:
+    """Loads ``sys_dictionary`` rows as dicts (wide projection), with SQL fallbacks."""
+
+    placeholders = ", ".join(["?"] * len(chain))
+    base_where = (
+        "WHERE sys_dictionary.element IS NOT NULL "
+        "AND (sys_dictionary.inactive = 0 OR sys_dictionary.inactive IS NULL) "
+    )
+    plain_where = (
+        "WHERE element IS NOT NULL "
+        "AND (inactive = 0 OR inactive IS NULL) "
+    )
+    wide_sel = (
+        "sys_dictionary.element AS sn_el, sys_dictionary.name AS sn_dt, "
+        "sys_dictionary.internal_type AS sn_it, sys_dictionary.max_length AS sn_ml, "
+        "sys_dictionary.mandatory AS sn_mq, sys_dictionary.read_only AS sn_ro, "
+        "sys_dictionary.reference AS sn_rf, "
+        "sys_dictionary.column_label AS sn_lb "
+    )
+    slim_sel = (
+        "sys_dictionary.element AS sn_el, sys_dictionary.name AS sn_dt, "
+        "sys_dictionary.internal_type AS sn_it, sys_dictionary.max_length AS sn_ml, "
+        "sys_dictionary.mandatory AS sn_mq, "
+        "sys_dictionary.reference AS sn_rf "
+    )
+    attempts: list[tuple[str, Sequence[Any]]] = [
+        (
+            _sanitize_query(
+                f"SELECT sys_dictionary.element AS sn_el, sys_dictionary.name AS sn_dt, "
+                f"sys_dictionary.internal_type AS sn_it FROM sys_dictionary {base_where}"
+                f"AND sys_dictionary.name IN ({placeholders})",
+            ),
+            chain,
+        ),
+        (
+            _sanitize_query(
+                "SELECT element AS sn_el, name AS sn_dt, internal_type AS sn_it "
+                f"FROM sys_dictionary {plain_where}AND name IN ({placeholders})",
+            ),
+            chain,
+        ),
+        (
+            _sanitize_query(
+                f"SELECT {wide_sel} FROM sys_dictionary {base_where}"
+                f"AND sys_dictionary.name IN ({placeholders})",
+            ),
+            chain,
+        ),
+        (
+            _sanitize_query(
+                "SELECT element AS sn_el, name AS sn_dt, internal_type AS sn_it, "
+                "max_length AS sn_ml, mandatory AS sn_mq, read_only AS sn_ro, reference AS sn_rf, "
+                "column_label AS sn_lb "
+                f"FROM sys_dictionary {plain_where}AND name IN ({placeholders})",
+            ),
+            chain,
+        ),
+        (
+            _sanitize_query(
+                f"SELECT {slim_sel} FROM sys_dictionary {base_where}"
+                f"AND sys_dictionary.name IN ({placeholders})",
+            ),
+            chain,
+        ),
+        (
+            _sanitize_query(
+                "SELECT element AS sn_el, name AS sn_dt, internal_type AS sn_it, "
+                "max_length AS sn_ml, mandatory AS sn_mq, reference AS sn_rf "
+                f"FROM sys_dictionary {plain_where}AND name IN ({placeholders})",
+            ),
+            chain,
+        ),
+        (
+            _sanitize_query(
+                f"SELECT sys_dictionary.element AS sn_el, sys_dictionary.name AS sn_dt, "
+                f"sys_dictionary.internal_type AS sn_it FROM sys_dictionary {base_where}"
+                "AND sys_dictionary.name = ?",
+            ),
+            [table.strip()],
+        ),
+        (
+            _sanitize_query(
+                f"SELECT sys_dictionary.element AS sn_el, sys_dictionary.name AS sn_dt, "
+                f"sys_dictionary.internal_type AS sn_it FROM sys_dictionary {base_where}"
+                "AND LOWER(sys_dictionary.name) = LOWER(?)",
+            ),
+            [table.strip()],
+        ),
+        (
+            _sanitize_query(
+                "SELECT element AS sn_el, name AS sn_dt, internal_type AS sn_it "
+                f"FROM sys_dictionary {plain_where}AND LOWER(name) = LOWER(?)",
+            ),
+            [table.strip()],
+        ),
+        (
+            _sanitize_query(
+                f"SELECT {wide_sel} FROM sys_dictionary {base_where}"
+                "AND sys_dictionary.name = ?",
+            ),
+            [table.strip()],
+        ),
+        (
+            _sanitize_query(
+                f"SELECT {wide_sel} FROM sys_dictionary {base_where}"
+                "AND LOWER(sys_dictionary.name) = LOWER(?)",
+            ),
+            [table.strip()],
+        ),
+        (
+            _sanitize_query(
+                "SELECT element AS sn_el, name AS sn_dt, internal_type AS sn_it, "
+                "max_length AS sn_ml, mandatory AS sn_mq, read_only AS sn_ro, reference AS sn_rf, "
+                "column_label AS sn_lb "
+                f"FROM sys_dictionary {plain_where}AND LOWER(name) = LOWER(?)",
+            ),
+            [table.strip()],
+        ),
+        (
+            _sanitize_query(
+                f"SELECT sys_dictionary.element AS sn_el, sys_dictionary.name AS sn_dt, "
+                f"sys_dictionary.internal_type AS sn_it FROM sys_dictionary "
+                "WHERE sys_dictionary.element IS NOT NULL "
+                f"AND sys_dictionary.name IN ({placeholders})",
+            ),
+            chain,
+        ),
+        (
+            _sanitize_query(
+                "SELECT element AS sn_el, name AS sn_dt, internal_type AS sn_it "
+                "FROM sys_dictionary WHERE element IS NOT NULL "
+                f"AND name IN ({placeholders})",
+            ),
+            chain,
+        ),
+        (
+            _sanitize_query(
+                f"SELECT sys_dictionary.element AS sn_el, sys_dictionary.name AS sn_dt, "
+                f"sys_dictionary.internal_type AS sn_it FROM sys_dictionary "
+                "WHERE sys_dictionary.element IS NOT NULL "
+                "AND sys_dictionary.name = ?",
+            ),
+            [table.strip()],
+        ),
+        (
+            _sanitize_query(
+                "SELECT element AS sn_el, name AS sn_dt, internal_type AS sn_it "
+                "FROM sys_dictionary WHERE element IS NOT NULL "
+                "AND LOWER(name) = LOWER(?)",
+            ),
+            [table.strip()],
+        ),
+    ]
+
+    for sql, params in attempts:
+        res = _cursor_query(conn, sql, params)
+        if not res:
+            continue
+        col_names, raw_rows = res
+        mapped = _wide_cursor_rows_to_dicts(col_names, raw_rows)
+        if mapped:
+            return mapped
+
+    raw_tuples = _load_sys_dictionary_rows(conn, chain, table.strip())
+    if not raw_tuples:
+        return []
+    out: list[dict[str, Any]] = []
+    for el, it, dt in raw_tuples:
+        el_s = _coerce_optional_str(el)
+        if not el_s:
+            continue
+        out.append(
+            {
+                "element": el_s,
+                "dict_table": _coerce_optional_str(dt),
+                "internal_type": _coerce_optional_str(it),
+                "max_length": None,
+                "mandatory": None,
+                "read_only": None,
+                "reference": None,
+                "column_label": None,
+            },
+        )
+    return out
+
+
+def _merge_dictionary_column_dicts(
+    rows: list[dict[str, Any]],
+    chain: list[str],
+) -> list[dict[str, Any]]:
+    """One merged row per ``element`` (inheritance: most specific ``dict_table`` first)."""
+
+    priority = {t.lower(): i for i, t in enumerate(chain)}
+    by_el: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for r in rows:
+        el = r.get("element")
+        if not el:
+            continue
+        by_el[str(el).strip().lower()].append(r)
+    merged: list[dict[str, Any]] = []
+    for lk in sorted(by_el.keys(), key=lambda s: s.lower()):
+        cands = by_el[lk]
+        cands.sort(
+            key=lambda c: priority.get(str(c.get("dict_table") or "").lower(), 999),
+        )
+        merged.append(dict(cands[0]))
+    return merged
+
+
+def _list_columns_from_sys_dictionary(
+    conn: Any,
+    jdbc_table: str,
+) -> list[dict[str, Any]] | None:
+    """Builds column metadata from ``sys_dictionary`` (inheritance chain)."""
+
+    table_key = _dictionary_table_key(jdbc_table)
+    chain = _fetch_table_chain(conn, table_key)
+    if not chain:
+        return None
+    rows = _load_sys_dictionary_column_dicts(conn, chain, table_key)
+    if not rows:
+        return None
+    merged = _merge_dictionary_column_dicts(rows, chain)
+    merged = [
+        m
+        for m in merged
+        if str(m.get("element") or "").strip().lower() not in JDBC_METADATA_PHANTOM_ELEMENTS
+    ]
+    if not merged:
+        return None
+
+    internal_types: set[str] = set()
+    for m in merged:
+        it = _coerce_optional_str(m.get("internal_type"))
+        if it:
+            internal_types.add(it)
+    glide_labels = _fetch_glide_type_labels(conn, internal_types)
+
+    api_rows: list[dict[str, Any]] = []
+    for m in merged:
+        el = m.get("element")
+        if not el:
+            continue
+        name = str(el).strip()
+        internal = _coerce_optional_str(m.get("internal_type"))
+        glide_lab = (
+            glide_labels.get(internal.lower())
+            if internal
+            else None
+        )
+        field_type = glide_lab or internal
+        mand = _coerce_optional_bool(m.get("mandatory"), bit=True)
+        nullable = True if mand is None else (not mand)
+        type_str = field_type or internal or "string"
+        api_rows.append(
+            {
+                "name": name,
+                "type": type_str,
+                "nullable": nullable,
+                "internal_type": internal,
+                "field_type": field_type or internal,
+            },
+        )
+    return api_rows
 
 
 # JDBC ``getColumns`` sometimes reports these as physical columns even when they
@@ -471,132 +956,88 @@ JDBC_METADATA_PHANTOM_ELEMENTS = frozenset(
 )
 
 
-def _jdbc_allowlist_from_dictionary_raw(
-    raw: list[tuple[Any, ...]],
-) -> frozenset[str]:
-    """Element names that look like real dictionary fields (typed or boolean flag)."""
+def _jdbc_list_physical_columns(conn: Any, jdbc_table: str) -> list[dict[str, Any]]:
+    """Last-resort column list via ``DatabaseMetaData.getColumns``.
 
-    names: set[str] = set()
-    for el_raw, it_raw, ff_raw, _dt in raw:
-        if el_raw is None:
-            continue
-        key = str(el_raw).strip().lower()
-        if not key:
-            continue
-        internal = _coerce_optional_str(it_raw)
-        ff = _coerce_optional_bool(ff_raw)
-        if internal or ff is not None:
-            names.add(key)
-    return frozenset(names)
-
-
-def _jdbc_element_names_from_dictionary_raw(raw: list[tuple[Any, ...]]) -> frozenset[str]:
-    """Every non-empty ``element`` from dictionary rows (inactive already filtered in SQL)."""
-
-    names: set[str] = set()
-    for el_raw, *_rest in raw:
-        if el_raw is None:
-            continue
-        key = str(el_raw).strip().lower()
-        if key:
-            names.add(key)
-    return frozenset(names)
-
-
-def _fetch_sys_dictionary_meta(
-    conn: Any,
-    table: str,
-) -> tuple[dict[str, dict[str, Any]], frozenset[str]]:
-    """Maps lowercased ``element`` → metadata, and which elements are real fields.
-
-    Returns ``(meta_by_element, jdbc_filter)``. ``jdbc_filter`` is used to drop
-    JDBC-only columns: prefer typed/flagged dictionary elements; if that set is
-    empty but dictionary rows exist, fall back to all dictionary ``element``
-    names. Known JDBC phantoms (e.g. ``sys_tags``) are removed from the filter set.
-
-    Loads ``sys_dictionary`` without joining ``sys_glide_object`` in the same
-    statement (some ServiceNow JDBC setups reject that join or return no
-    rows). Human-readable types come from a follow-up ``sys_glide_object``
-    query when possible.
-
-    Uses the table's ``sys_db_object`` inheritance chain so parent fields
-    resolve. Matching is case-insensitive on dictionary table names.
+    Used when ``sys_dictionary`` cannot be read or returns no rows (driver /
+    dialect / permissions). Types come from JDBC, not Glide.
     """
 
-    chain = _fetch_table_chain(conn, table)
-    if not chain:
-        return {}, frozenset()
+    cleaned = jdbc_table.strip()
+    if not cleaned:
+        return []
 
-    priority = {t.lower(): i for i, t in enumerate(chain)}
-    raw = _load_sys_dictionary_rows(conn, chain, table.strip())
-    if not raw:
-        return {}, frozenset()
+    jconn = _java_connection(conn)
+    md = jconn.getMetaData()
 
-    jdbc_allow = _jdbc_allowlist_from_dictionary_raw(raw)
-    all_elements = _jdbc_element_names_from_dictionary_raw(raw)
-    strict_cut = frozenset(jdbc_allow - JDBC_METADATA_PHANTOM_ELEMENTS)
-    fallback_cut = frozenset(all_elements - JDBC_METADATA_PHANTOM_ELEMENTS)
-    if strict_cut:
-        jdbc_filter = strict_cut
-    elif fallback_cut:
-        jdbc_filter = fallback_cut
+    variants: list[tuple[str | None, str | None, str]] = []
+    if "." in cleaned:
+        left, right = cleaned.rsplit(".", 1)
+        left, right = left.strip(), right.strip()
+        if left and right:
+            variants.extend(
+                [
+                    (None, None, cleaned),
+                    (None, left, right),
+                    (None, None, right),
+                ],
+            )
+        else:
+            variants.append((None, None, cleaned))
     else:
-        jdbc_filter = frozenset()
+        variants.append((None, None, cleaned))
 
-    internal_types: set[str] = set()
-    by_element: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    for el_raw, it_raw, ff_raw, dt_raw in raw:
-        if el_raw is None:
-            continue
-        key = str(el_raw).strip().lower()
-        if not key:
-            continue
-        internal = _coerce_optional_str(it_raw)
-        if internal:
-            internal_types.add(internal)
-        dt_key = str(dt_raw).strip().lower() if dt_raw is not None else ""
-        by_element[key].append(
-            {
-                "internal_type": internal,
-                "function_field": _coerce_optional_bool(ff_raw),
-                "dict_table": dt_key,
-            }
-        )
+    seen: set[tuple[str | None, str | None, str]] = set()
+    ordered: list[tuple[str | None, str | None, str]] = []
+    for v in variants:
+        if v not in seen and v[2]:
+            seen.add(v)
+            ordered.append(v)
 
-    glide_labels = _fetch_glide_type_labels(conn, internal_types)
-
-    out: dict[str, dict[str, Any]] = {}
-    for key, cands in by_element.items():
-        cands.sort(
-            key=lambda c: priority.get(str(c.get("dict_table") or ""), 999),
-        )
-        pick = cands[0]
-        internal = pick.get("internal_type")
-        ff = pick.get("function_field")
-        if ff is None:
-            # Instance UI treats missing flag as "not a function field" (false).
-            ff = False
-        label = None
-        if isinstance(internal, str) and internal.strip():
-            label = glide_labels.get(internal.strip().lower())
-        field_type = label or internal
-        out[key] = {
-            "internal_type": internal,
-            "function_field": ff,
-            "field_type": field_type,
-        }
-    return out, jdbc_filter
+    for cat, schema, table_name in ordered:
+        rs = md.getColumns(cat, schema, table_name, "%")
+        rows: list[dict[str, Any]] = []
+        try:
+            while rs.next():
+                col_name = rs.getString("COLUMN_NAME")
+                if not col_name:
+                    continue
+                lk = str(col_name).strip().lower()
+                if lk in JDBC_METADATA_PHANTOM_ELEMENTS:
+                    continue
+                type_name = rs.getString("TYPE_NAME")
+                type_str = (type_name.strip() if type_name else "") or "string"
+                try:
+                    nullable_int = int(rs.getInt("NULLABLE"))
+                except Exception:
+                    nullable_int = 1
+                rows.append(
+                    {
+                        "name": str(col_name).strip(),
+                        "type": type_str,
+                        "nullable": nullable_int == 1,
+                        "internal_type": None,
+                        "field_type": None,
+                    },
+                )
+        finally:
+            rs.close()
+        if rows:
+            return rows
+    return []
 
 
 def list_columns(
     table: str,
     override: ConnectionOverride | None = None,
 ) -> list[dict[str, Any]]:
-    """Returns column metadata via JDBC ``getColumns``, enriched from ``sys_dictionary``.
+    """Returns field metadata, preferring ``sys_dictionary`` (inheritance chain).
 
-    When dictionary rows exist, JDBC columns are intersected with
-    ``jdbc_filter`` so driver-only columns are dropped. Inactive dictionary rows
-    are ignored. See ``JDBC_METADATA_PHANTOM_ELEMENTS``.
+    When dictionary rows exist, the response matches instance field definitions
+    (types, mandatory → nullable). If ``sys_dictionary`` cannot be read or
+    returns no rows, falls back to JDBC ``DatabaseMetaData.getColumns`` so the
+    schema UI still lists physical columns. ``JDBC_METADATA_PHANTOM_ELEMENTS``
+    are dropped in both paths.
     """
 
     cleaned = table.strip()
@@ -604,54 +1045,7 @@ def list_columns(
         return []
 
     with get_connection(override) as conn:
-        jconn = _java_connection(conn)
-        metadata = jconn.getMetaData()
-        rs = metadata.getColumns(None, None, cleaned, "%")
-        rows: list[dict[str, Any]] = []
-        try:
-            while rs.next():
-                rows.append(
-                    {
-                        "name": rs.getString("COLUMN_NAME"),
-                        "type": rs.getString("TYPE_NAME"),
-                        "nullable": int(rs.getInt("NULLABLE") or 0) == 1,
-                    }
-                )
-        finally:
-            rs.close()
-
-        dict_meta, jdbc_filter = _fetch_sys_dictionary_meta(
-            conn,
-            _dictionary_table_key(cleaned),
-        )
-
-    merged: list[dict[str, Any]] = []
-    for row in rows:
-        name = row.get("name")
-        if not name:
-            continue
-        lk = str(name).strip().lower()
-        dm = dict_meta.get(lk, {})
-        ff_val = dm.get("function_field")
-        if ff_val is None and lk in dict_meta:
-            ff_val = False
-        merged.append(
-            {
-                **row,
-                "internal_type": dm.get("internal_type"),
-                "field_type": dm.get("field_type"),
-                "function_field": ff_val,
-            }
-        )
-
-    # JDBC ``getColumns`` exposes driver/system columns (e.g. ``sys_tags``) that
-    # are not real dictionary fields. Intersect with dictionary elements when we
-    # have any; strip known JDBC phantoms (see ``JDBC_METADATA_PHANTOM_ELEMENTS``).
-    if jdbc_filter:
-        merged = [
-            m
-            for m in merged
-            if str(m.get("name", "")).strip().lower() in jdbc_filter
-        ]
-
-    return merged
+        dict_rows = _list_columns_from_sys_dictionary(conn, cleaned)
+        if dict_rows:
+            return dict_rows
+        return _jdbc_list_physical_columns(conn, cleaned)

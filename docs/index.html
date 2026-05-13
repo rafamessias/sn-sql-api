@@ -347,7 +347,7 @@ let lang = 'en';
 
 const TRANSLATIONS = {
   en: {
-    headerTitle: 'ServiceNow SQL API · FastAPI · Step-by-step guide',
+    headerTitle: 'ServiceNow SQL API · sn-sql-api setup wizard',
     sbLabel: 'Steps',
     cfgPanelTitle: 'Your instance config',
     lblInstance: 'Instance name',
@@ -365,7 +365,7 @@ const TRANSLATIONS = {
     zipPanelTitle: 'Starter ZIP',
     zipDlLabel: 'sn-sql-api-starter.zip',
     zipToast: '✓ sn-sql-api-starter.zip downloaded',
-    repoBanner: '<a href="https://github.com/rafamessias/sn-sql-api" target="_blank" rel="noopener noreferrer">rafamessias/sn-sql-api</a> · Clone this repo, add <ic>drivers/*.jar</ic>, fill <ic>.env</ic>, then <ic>docker compose up --build</ic>. Official JDBC docs: <a href="https://www.servicenow.com/docs/r/api-reference/web-services/configure-jdbc-driver.html" target="_blank" rel="noopener noreferrer">Configure JDBC driver</a>.',
+    repoBanner: '<strong>This wizard</strong> explains the platform <strong>SQL API</strong>, points to <strong>ServiceNow documentation</strong>, then walks you through cloning <a href="https://github.com/rafamessias/sn-sql-api" target="_blank" rel="noopener noreferrer">sn-sql-api</a>, configuring your instance, running Docker, and executing your first query. JDBC reference: <a href="https://www.servicenow.com/docs/r/api-reference/web-services/configure-jdbc-driver.html" target="_blank" rel="noopener noreferrer">Configure JDBC driver</a> · <a href="https://www.servicenow.com/docs/r/zurich/platform-security/connections-and-credentials/create-JDBC-connection.html" target="_blank" rel="noopener noreferrer">Create JDBC connection</a>.',
     repoGuideBadge: 'Setup wizard',
     persistLabel: 'saved',
     trefSearchPlaceholder: 'Search tables or columns…',
@@ -388,20 +388,187 @@ const TRANSLATIONS = {
     copy: 'copy', copied: '✓ copied',
     back: '← Back', next: 'Next step →', complete: '✓ Complete', restart: '↺ Start over',
     steps: [
-      { title: 'Prerequisites',       short: 'Prereqs'   },
-      { title: 'Repository layout',   short: 'Layout'    },
-      { title: 'Docker image',       short: 'Docker'    },
-      { title: 'Python dependencies', short: 'Deps'    },
-      { title: 'Configuration',      short: 'Config'    },
-      { title: 'Run with Compose',   short: 'Compose'   },
-      { title: 'Verify the API',     short: 'Verify'    },
-      { title: 'Troubleshooting',    short: 'Debug'     },
-      { title: 'HTTP examples',      short: 'HTTP'      },
-      { title: 'Local development',  short: 'Dev'       },
+      { title: 'What is SQL API?',     short: 'SQL API'   },
+      { title: 'Prerequisites',        short: 'Prereqs'   },
+      { title: 'Download this project', short: 'Clone'     },
+      { title: 'JDBC driver & stack',  short: 'Driver'    },
+      { title: 'Configure instance',   short: 'Config'    },
+      { title: 'Run Docker',           short: 'Docker'    },
+      { title: 'Run a query',          short: 'Query'     },
+      { title: 'Troubleshooting',      short: 'Debug'     },
+      { title: 'HTTP snippets',        short: 'HTTP'      },
+      { title: 'Local development',    short: 'Dev'       },
     ],
+    sqlApiIntro: {
+      stepNum: 'Step 01',
+      title: 'What is the ServiceNow SQL API?',
+      desc: 'On your ServiceNow instance, the <strong>SQL API</strong> (a store application you install per instance) lets approved clients run SQL against platform data using the same security model as the rest of the instance — not a separate database, but <strong>controlled access</strong> through JDBC.',
+      p1: 'Typical integration pattern: download the <strong>instance-specific JDBC driver</strong>, use the <strong>driver class</strong> and <strong>JDBC URL</strong> shape from ServiceNow documentation, authenticate with a <strong>service account</strong> that has the <ic>sn_jdbc_rest_access</ic> role, and allow your client’s <strong>egress IP</strong> under SQL API IP filter criteria.',
+      p2: 'The <strong>sn-sql-api</strong> project on GitHub is a convenience layer: a <strong>FastAPI</strong> container that loads that official JDBC driver (via JayDeBeApi) and exposes simple REST endpoints — mainly <ic>POST /query</ic> — plus an optional browser SQL console, so you can prototype locally with Docker.',
+      docHeading: 'Official ServiceNow documentation (always follow your family / release)',
+      linkJdbc: 'Configure JDBC driver',
+      linkJdbcHref: 'https://www.servicenow.com/docs/r/api-reference/web-services/configure-jdbc-driver.html',
+      linkConn: 'Create JDBC connection',
+      linkConnHref: 'https://www.servicenow.com/docs/r/zurich/platform-security/connections-and-credentials/create-JDBC-connection.html',
+      linkStore: 'SQL API — ServiceNow Store (install on instance; driver downloads live in the instance UI)',
+      linkStoreHref: 'https://store.servicenow.com/store/app/699af7c347404f90040ae738436d4350',
+      flowTeaser: '<strong>Next steps in this wizard:</strong> prerequisites → clone the repo → place the JDBC JAR → fill <ic>.env</ic> → <ic>docker compose up --build</ic> → run SQL from Swagger, curl, or the web UI.',
+    },
+    prereqs: {
+      stepNum: 'Step 02',
+      title: 'Prerequisites checklist',
+      desc: 'Confirm your ServiceNow side and your laptop are ready before you run the container.',
+      progress: 'Completed',
+      of: '/',
+      items: [
+        { title: 'ServiceNow instance URL confirmed',       desc: 'You know your instance host — e.g. <ic>mycompany.service-now.com</ic> (short name <ic>mycompany</ic> is OK in <ic>SN_INSTANCE</ic>).' },
+        { title: 'Service account created with correct role', desc: 'A ServiceNow admin assigned the <ic>sn_jdbc_rest_access</ic> role to the JDBC user.' },
+        { title: 'SQL API IP filter configured',            desc: "The machine or container egress IP is allowed under SQL API IP filter criteria on the instance." },
+        { title: 'JDBC driver JAR downloaded',              desc: 'The instance-specific <ic>.jar</ic> is on your host under <ic>./drivers/</ic> (mounted read-only at <ic>/app/drivers/</ic> in the container). See <a href="https://www.servicenow.com/docs/r/api-reference/web-services/configure-jdbc-driver.html" target="_blank" rel="noopener" style="color:var(--blue);text-decoration:underline">Configure JDBC driver</a>.' },
+        { title: 'Docker installed and running',            desc: 'Run <ic>docker compose version</ic> to confirm Compose v2 is available.' },
+      ],
+      warn: '<strong>How this project connects:</strong> <strong>FastAPI</strong> exposes REST endpoints; <strong>JayDeBeApi + JPype1</strong> run inside the API process and talk to JDBC. The runtime image installs a headless JRE (<ic>default-jre-headless</ic>) — you do not configure <ic>JAVA_HOME</ic> manually for the default container.',
+    },
+    cloneRepo: {
+      stepNum: 'Step 03',
+      title: 'Download this project',
+      desc: 'Get a local copy of <strong>sn-sql-api</strong>. You will add <ic>drivers/*.jar</ic> and a root <ic>.env</ic> in the following steps — nothing else is required to follow this guide.',
+      divClone: 'Clone with Git',
+      cmtClone: '# HTTPS (recommended for first-time setup)',
+      divZip: 'Or use the starter ZIP',
+      zipHint: 'Use the <strong>Starter ZIP</strong> button in the left sidebar to download a minimal <ic>.env</ic> template and quick-start notes, then merge into your clone.',
+      info: '<strong>Repository layout (after clone):</strong> application code lives under <ic>src/</ic>; the browser UI is built from <ic>web/</ic> into <ic>src/static/dist/</ic> when you build the Docker image.',
+      warn: '<strong>Never commit secrets or the JDBC JAR.</strong> Keep <ic>.env</ic> and <ic>drivers/*.jar</ic> local and listed in <ic>.gitignore</ic> as in the upstream repo.',
+      cmt1: '# FastAPI + JDBC client', cmt2: '# built UI → served at /', cmt3: '# your instance JAR (not in git)',
+    },
+    jdbcStack: {
+      stepNum: 'Step 04',
+      title: 'JDBC driver & what Docker builds',
+      desc: 'Place the <strong>driver file from your ServiceNow instance</strong> on your machine, then let Docker install the rest. Menus vary by release; your admin usually installs the SQL API app from the store, then downloads the JDBC JAR from <ic>SQL API → Downloads</ic> (or equivalent) on the instance.',
+      jarTitle: 'drivers/ on your laptop',
+      jarBody: 'Save the JAR as e.g. <ic>./drivers/servicenow-jdbc.jar</ic>. Compose mounts <ic>./drivers</ic> read-only at <ic>/app/drivers</ic>. Set <ic>SN_JDBC_JAR_PATH</ic> in <ic>.env</ic> to the <strong>container path</strong> of that file.',
+      stackTitle: 'What the Dockerfile does (summary)',
+      cmt1: '# Stage 1 — npm run build in web/',
+      cmt2: '# Stage 2 — Python + headless JRE for JDBC',
+      cmt3: '# JDBC bridge: jaydebeapi + JPype1',
+      warn: '<strong>Driver vs URL:</strong> Match <ic>SN_JDBC_DRIVER_CLASS</ic> to your JAR (native <ic>com.snc.db.jdbc.JDBCDriver</ic> vs Simba <ic>com.simba.servicenow.jdbc.Driver</ic>). Use the JDBC URL format from the official doc, or set <ic>SN_JDBC_URL</ic> explicitly — see <ic>src/config.py</ic>.',
+      divBuild: 'When you are ready to build',
+      cmtBuild: '# From the repository root (next step after .env is filled)',
+      depsTitle: 'Pinned Python dependencies (excerpt)',
+      info: 'Exact versions live in the repo; upgrade only when you intend to.',
+      col1: 'Package', col2: 'Role', col3: 'Notes',
+      row1desc: 'REST layer for <ic>/query</ic>, <ic>/schema/*</ic>, <ic>/health</ic>, …',
+      row2desc: 'ASGI server started by the container.',
+    },
+    connection: {
+      stepNum: 'Step 05',
+      title: 'Configure your instance (.env)',
+      desc: 'Map your ServiceNow instance, JDBC user, password, driver class, and JAR path into environment variables. The running container reads them through <ic>src/config.py</ic> (pydantic-settings). Use the <strong>live panel on the left</strong> to generate a starter file.',
+      cmt1: '# Required',
+      cmt2: '# Optional — full JDBC URL from your doc / instance',
+      cmt3: '# Optional — if set, protects POST /query, /schema/*, /health/check, /debug/jdbc-auth',
+      cmt6: '# Optional — true = headless (REST API only, no web UI at /)',
+      cmt4: '# Native instance JAR often uses com.snc.db.jdbc.JDBCDriver',
+      cmt5: '# Default Simba driver in code: com.simba.servicenow.jdbc.Driver',
+      doc1: '',
+      doc2: '',
+      warn: '<strong>Optional per-request override:</strong> JSON bodies may include a <ic>connection</ic> object with <ic>url</ic>, <ic>user</ic>, <ic>password</ic>, and optional <ic>driver_class</ic> — see OpenAPI at <ic>/docs</ic>.',
+    },
+    run: {
+      stepNum: 'Step 06',
+      title: 'Run Docker',
+      desc: 'From the repository root, Compose builds the image, mounts your <ic>drivers/</ic> folder, loads <ic>.env</ic>, and publishes the API on port <strong>8000</strong>.',
+      divBuild: 'start',
+      divRun: 'What you get',
+      divCompose: 'compose excerpt (from the repo)',
+      divEnv: '.env file',
+      envDesc: 'Use the panel on the left to fill instance, user, password, and JAR path, then download or copy. Add optional <ic>SN_JDBC_URL</ic>, <ic>API_KEY</ic>, or <ic>API_ONLY=true</ic> (headless mode — no web UI at <ic>/</ic>) in your editor if needed.',
+      envRunCmd: '# After drivers/ and .env are ready',
+      info: '<strong>Security:</strong> <ic>/query</ic> runs arbitrary SQL. Do not expose the container publicly without network policy, reverse proxy auth, or similar controls.',
+      cmtCompose: '# sn-sql-api service — see repository for full file',
+    },
+    verify: {
+      stepNum: 'Step 07',
+      title: 'Run your first query',
+      desc: 'With the stack up, confirm health, then send SQL to <ic>POST /query</ic>. Use Swagger for a guided first run, or paste the curl examples below.',
+      prereqBox: '<strong>Before you start:</strong> containers are up, <ic>.env</ic> has real credentials, and the JDBC file exists at <ic>SN_JDBC_JAR_PATH</ic> inside the container.',
+      div0: '1 — liveness',
+      p0: 'GET <ic>/health</ic> does not require an API key and confirms the process and configured driver class name:',
+      langShell: 'bash — host',
+      cmtShell1: '',
+      cmtJar: '',
+      cmtExit: '',
+      langExpected: 'example JSON',
+      cmt1: '',
+      cmt2: '',
+      cmt3: '',
+      warn: '',
+      div1: '2 — run SQL via POST /query',
+      p1: 'Send JSON <ic>{"query":"…"}</ic>. Optional <ic>parameters</ic> array for prepared-style calls. If <ic>API_KEY</ic> is set, add <ic>-H "x-api-key: …"</ic>.',
+      langRun: 'bash — host',
+      cmtRun: '',
+      flagNote: 'Response shape: <ic>{"columns":[],"rows":[],"row_count":n}</ic> (list of column names and aligned row arrays).',
+      cmtExpected: '',
+      ok: 'HTTP 200 with rows means JDBC, auth, and SQL API access are working end-to-end.',
+      div2: '3 — JDBC probe (optional)',
+      p2: 'POST <ic>/health/check</ic> opens a JDBC connection using server defaults or an optional <ic>connection</ic> object in the body. Requires <ic>x-api-key</ic> when <ic>API_KEY</ic> is configured.',
+      langVol: 'bash — host',
+      cmtVol: '',
+      volNote: 'Open <ic>http://localhost:8000/docs</ic> to try all operations interactively.',
+      winNote: '<strong>Browser UI:</strong> When the production bundle is present and <ic>API_ONLY</ic> is unset (or <ic>false</ic>), <ic>http://localhost:8000/</ic> serves the SQL console (Editor, Schema, Connections tabs). With <ic>API_ONLY=true</ic>, <ic>/</ic> shows a minimal landing page and all REST endpoints stay available.',
+      div3: '4 — schema discovery',
+      p3: 'POST <ic>/schema/tables</ic> with optional <ic>pattern</ic> (SQL LIKE). POST <ic>/schema/columns</ic> with <ic>{"table":"incident"}</ic>. Both respect <ic>API_KEY</ic> the same way as <ic>/query</ic>.',
+      cmtScript1: '',
+      cmtScript2: '',
+      chmodNote: '',
+    },
+    trouble: {
+      stepNum: 'Step 08', title: 'Troubleshooting',
+      desc: 'Click an error to expand its diagnosis and fix.',
+      issues: [
+        {
+          title: '✗ JVM / Java errors at startup or first query',
+          body: `<strong>Cause:</strong> JPype cannot start the JVM (missing JRE, wrong architecture, or corrupt install).<br><br>
+<strong>Fix:</strong> Rebuild the image from the official <ic>Dockerfile</ic> (it installs <ic>default-jre-headless</ic>). Check <ic>docker compose logs sn-sql-api</ic> for the stack trace. For native <ic>pip</ic> runs, install a full JDK and ensure <ic>java -version</ic> works on <ic>PATH</ic>.`
+        },
+        {
+          title: '✗ Connection refused / timeout',
+          body: `<strong>Cause A — IP not in allowlist:</strong> The most common reason. The container's egress IP is not in the SQL API IP filter criteria on the ServiceNow instance.<br><br>
+Find the egress IP (from the host or container) and add it under <ic>SQL API → IP filter criteria</ic>.<br><br>
+<strong>Cause B — SQL API not enabled:</strong> A ServiceNow admin needs to activate the SQL API feature. Check under <ic>System Definition → Plugins</ic>.<br><br>
+<strong>Cause C — Wrong instance URL:</strong> Confirm the URL is reachable: <ic>curl -I https://<span data-tpl="instance">mycompany</span>.service-now.com</ic>`
+        },
+        {
+          title: '✗ ClassNotFoundException — driver class not found',
+          body: `<strong>Cause:</strong> <ic>SN_JDBC_DRIVER_CLASS</ic> does not match the driver inside your JAR.<br><br>
+<strong>Fix:</strong> Inspect the JAR inside the running container:
+<div class="cw" style="margin:10px 0"><div class="ch"><span class="clang">bash</span></div><div class="cb">docker compose exec sn-sql-api jar tf <span data-tpl="jar">/app/drivers/servicenow-jdbc.jar</span> | grep -i driver</div></div>
+Set <ic>SN_JDBC_DRIVER_CLASS</ic> to the documented class for that JAR (often <ic>com.snc.db.jdbc.JDBCDriver</ic> or <ic>com.simba.servicenow.jdbc.Driver</ic>).`
+        },
+        {
+          title: '✗ HTTP 401 Invalid API key',
+          body: `<strong>Cause:</strong> <ic>API_KEY</ic> is set in <ic>.env</ic> but the request is missing <ic>x-api-key</ic> or the value does not match.<br><br>
+<strong>Fix:</strong> Send <ic>-H "x-api-key: YOUR_KEY"</ic> on POST <ic>/query</ic>, <ic>/schema/tables</ic>, <ic>/schema/columns</ic>, <ic>/health/check</ic>, and <ic>/debug/jdbc-auth</ic>. GET <ic>/health</ic> stays unauthenticated. The bundled web UI does not send the key — use curl, Swagger, a proxy, or unset <ic>API_KEY</ic> for local-only use.`
+        },
+        {
+          title: '✗ Authentication failure on JDBC (not HTTP 401)',
+          body: `<strong>Cause:</strong> Wrong JDBC user/password, or the service account is missing the <ic>sn_jdbc_rest_access</ic> role.<br><br>
+<strong>Checklist:</strong><br>
+&nbsp;1. Verify <ic>SN_USERNAME</ic> is the <strong>User ID</strong> field, not the display name.<br>
+&nbsp;2. Verify the account is not locked (<ic>Locked out</ic> on the user record).<br>
+&nbsp;3. Confirm the role <ic>sn_jdbc_rest_access</ic> is assigned.<br>
+&nbsp;4. For Simba URLs, ensure <ic>User</ic> and <ic>Password</ic> appear in the JDBC URL or use the server-built Simba URL from <ic>src/config.py</ic>.`
+        },
+        {
+          title: '✗ Table not found / permission denied on query',
+          body: `<strong>Cause:</strong> The service account does not have read access to the table, or the table is not enabled for SQL API access.<br><br>
+<strong>Fix:</strong> In ServiceNow, open <ic>SQL API → Table Access</ic> and verify the table and roles. ACLs still apply.`
+        },
+      ],
+    },
     queryRunner: {
       stepNum: 'Step 09',
-      title: 'HTTP examples',
+      title: 'HTTP snippets',
       desc: 'Copy-ready <strong>curl</strong> and <strong>Python</strong> calls against the running API (<ic>http://localhost:8000</ic>). SQL is flattened to one line for safe shell pasting. Match <ic>SN_JDBC_DRIVER_CLASS</ic> to your JAR (Simba vs native).',
       tplLabel: 'Templates',
       fmtLabel: 'Generate',
@@ -460,152 +627,10 @@ const TRANSLATIONS = {
       winNote: '<strong>API_KEY:</strong> If set in <ic>.env</ic>, POST <ic>/query</ic>, <ic>/schema/*</ic>, <ic>/health/check</ic>, and <ic>/debug/jdbc-auth</ic> require header <ic>x-api-key</ic>. The bundled web UI does not send it — use curl, a gateway, or leave unset for trusted local use.',
       javaHomeNote: '<strong>Web root placeholder:</strong> If <ic>src/static/dist/index.html</ic> is missing, <ic>/</ic> shows dev instructions; API routes such as <ic>/query</ic> still work.',
     },
-    prereqs: {
-      stepNum: 'Step 01',
-      title: 'Prerequisites checklist',
-      desc: 'Confirm these before starting the stack from the GitHub repository.',
-      progress: 'Completed',
-      of: '/',
-      items: [
-        { title: 'ServiceNow instance URL confirmed',       desc: 'You know your instance host — e.g. <ic>mycompany.service-now.com</ic> (short name <ic>mycompany</ic> is OK in <ic>SN_INSTANCE</ic>).' },
-        { title: 'Service account created with correct role', desc: 'A ServiceNow admin assigned the <ic>sn_jdbc_rest_access</ic> role to the JDBC user.' },
-        { title: 'SQL API IP filter configured',            desc: "The machine or container egress IP is allowed under SQL API IP filter criteria on the instance." },
-        { title: 'JDBC driver JAR downloaded',              desc: 'The instance-specific <ic>.jar</ic> is on your host under <ic>./drivers/</ic> (mounted read-only at <ic>/app/drivers/</ic> in the container). See <a href="https://www.servicenow.com/docs/r/api-reference/web-services/configure-jdbc-driver.html" target="_blank" rel="noopener" style="color:var(--blue);text-decoration:underline">Configure JDBC driver</a>.' },
-        { title: 'Docker installed and running',            desc: 'Run <ic>docker compose version</ic> to confirm Compose v2 is available.' },
-      ],
-      warn: '<strong>How this project connects:</strong> <strong>FastAPI</strong> exposes REST endpoints; <strong>JayDeBeApi + JPype1</strong> run inside the API process and talk to JDBC. The runtime image installs a headless JRE (<ic>default-jre-headless</ic>) — you do not configure <ic>JAVA_HOME</ic> manually for the default container.',
-    },
-    structure: {
-      stepNum: 'Step 02', title: 'Repository layout',
-      desc: 'Clone <a href="https://github.com/rafamessias/sn-sql-api" target="_blank" rel="noopener" style="color:var(--blue);text-decoration:underline">rafamessias/sn-sql-api</a>. You only add your JDBC JAR under <ic>drivers/</ic> and a root <ic>.env</ic> — the service code ships in the repo.',
-      info: '<strong>JAR path:</strong> Default in docs and compose is <ic>./drivers</ic> → <ic>/app/drivers</ic> in the container. Set <ic>SN_JDBC_JAR_PATH</ic> to the exact path of your file inside the container (for example <ic>/app/drivers/servicenow-jdbc.jar</ic>).',
-      warn: '<strong>Never commit the JAR or real secrets.</strong> Keep <ic>drivers/*.jar</ic> and <ic>.env</ic> out of git.',
-      cmt1: '# FastAPI + JDBC client', cmt2: '# built UI → served at /', cmt3: '# your instance JAR (not in git)',
-    },
-    dockerfile: {
-      stepNum: 'Step 03', title: 'Docker image (from the repo)',
-      desc: 'The maintained <ic>Dockerfile</ic> builds the Preact UI, then installs Python dependencies and copies <ic>src/</ic> plus the built static assets. You normally do not edit this file for a first deployment.',
-      cmt1: '# Stage 1 — npm run build in web/',
-      cmt2: '# Stage 2 — python:3.11-slim + default-jre-headless',
-      cmt3: '# JDBC bridge: jaydebeapi + JPype1 (see requirements.txt)',
-      warn: '<strong>Driver vs URL shape:</strong> If <ic>SN_JDBC_DRIVER_CLASS</ic> is <ic>com.snc.db.jdbc.JDBCDriver</ic>, the API uses <ic>jdbc:servicenow://https://…</ic> plus JDBC user/password properties. For the Simba driver, use the semicolon URL from the official doc or set <ic>SN_JDBC_URL</ic> explicitly.',
-      divBuild: 'Typical build',
-      cmtBuild: '# From the cloned repository root',
-    },
-    reqs: {
-      stepNum: 'Step 04', title: 'requirements.txt',
-      desc: 'Pinned server dependencies from the repository. JDBC access still goes through JayDeBeApi; FastAPI and Uvicorn expose the HTTP layer.',
-      info: '<strong>Versions:</strong> Bump only when you align with upstream releases or security fixes. The repo is the source of truth.',
-      col1: 'Package', col2: 'Role', col3: 'Notes',
-      row1desc: 'ASGI web framework; defines <ic>/query</ic>, <ic>/schema/*</ic>, <ic>/health</ic>, etc.',
-      row2desc: 'Production ASGI server for the container entrypoint.',
-    },
-    connection: {
-      stepNum: 'Step 05', title: 'Configuration (.env → Settings)',
-      desc: 'The API loads settings with <strong>pydantic-settings</strong> from environment variables (and optional <ic>.env</ic>). Names below match <ic>src/config.py</ic>.',
-      cmt1: '# Required',
-      cmt2: '# Optional — full JDBC URL from your doc / instance',
-      cmt3: '# Optional — if set, protects POST /query, /schema/*, /health/check, /debug/jdbc-auth',
-      cmt4: '# Native instance JAR often uses com.snc.db.jdbc.JDBCDriver',
-      cmt5: '# Default Simba driver in code: com.simba.servicenow.jdbc.Driver',
-      doc1: '',
-      doc2: '',
-      warn: '<strong>Optional per-request override:</strong> JSON bodies may include a <ic>connection</ic> object with <ic>url</ic>, <ic>user</ic>, <ic>password</ic>, and optional <ic>driver_class</ic> — see OpenAPI at <ic>/docs</ic>.',
-    },
-    run: {
-      stepNum: 'Step 06', title: 'Run with Docker Compose',
-      desc: 'From the repository root, Compose builds the image, mounts your <ic>drivers/</ic> folder, loads <ic>.env</ic>, and publishes the API on port <strong>8000</strong>.',
-      divBuild: 'start',
-      divRun: 'What you get',
-      divCompose: 'compose excerpt (from the repo)',
-      divEnv: '.env file',
-      envDesc: 'Use the panel on the left to fill instance, user, password, and JAR path, then download or copy. Add optional <ic>SN_JDBC_URL</ic> or <ic>API_KEY</ic> in your editor if needed.',
-      envRunCmd: '# After drivers/ and .env are ready',
-      info: '<strong>Security:</strong> <ic>/query</ic> runs arbitrary SQL. Do not expose the container publicly without network policy, reverse proxy auth, or similar controls.',
-      cmtCompose: '# sn-sql-api service — see repository for full file',
-    },
-    verify: {
-      stepNum: 'Step 07', title: 'Verify the API',
-      desc: 'With <ic>docker compose up --build</ic> running, these calls hit the FastAPI app on <ic>http://localhost:8000</ic>.',
-      prereqBox: '<strong>Before you start:</strong> containers are up, <ic>.env</ic> has real credentials, and the JDBC file exists at <ic>SN_JDBC_JAR_PATH</ic> inside the container.',
-      div0: '1 — liveness',
-      p0: 'GET <ic>/health</ic> does not require an API key and confirms the process and configured driver class name:',
-      langShell: 'bash — host',
-      cmtShell1: '',
-      cmtJar: '',
-      cmtExit: '',
-      langExpected: 'example JSON',
-      cmt1: '',
-      cmt2: '',
-      cmt3: '',
-      warn: '',
-      div1: '2 — run SQL via POST /query',
-      p1: 'Send JSON <ic>{"query":"…"}</ic>. Optional <ic>parameters</ic> array for prepared-style calls. If <ic>API_KEY</ic> is set, add <ic>-H "x-api-key: …"</ic>.',
-      langRun: 'bash — host',
-      cmtRun: '',
-      flagNote: 'Response shape: <ic>{"columns":[],"rows":[],"row_count":n}</ic> (list of column names and aligned row arrays).',
-      cmtExpected: '',
-      ok: 'HTTP 200 with rows means JDBC, auth, and SQL API access are working end-to-end.',
-      div2: '3 — JDBC probe (optional)',
-      p2: 'POST <ic>/health/check</ic> opens a JDBC connection using server defaults or an optional <ic>connection</ic> object in the body. Requires <ic>x-api-key</ic> when <ic>API_KEY</ic> is configured.',
-      langVol: 'bash — host',
-      cmtVol: '',
-      volNote: 'Open <ic>http://localhost:8000/docs</ic> to try all operations interactively.',
-      winNote: '<strong>Browser UI:</strong> When the production bundle is present, <ic>http://localhost:8000/</ic> serves the SQL console (Editor, Schema, Connections tabs).',
-      div3: '4 — schema discovery',
-      p3: 'POST <ic>/schema/tables</ic> with optional <ic>pattern</ic> (SQL LIKE). POST <ic>/schema/columns</ic> with <ic>{"table":"incident"}</ic>. Both respect <ic>API_KEY</ic> the same way as <ic>/query</ic>.',
-      cmtScript1: '',
-      cmtScript2: '',
-      chmodNote: '',
-    },
-    trouble: {
-      stepNum: 'Step 08', title: 'Troubleshooting',
-      desc: 'Click an error to expand its diagnosis and fix.',
-      issues: [
-        {
-          title: '✗ JVM / Java errors at startup or first query',
-          body: `<strong>Cause:</strong> JPype cannot start the JVM (missing JRE, wrong architecture, or corrupt install).<br><br>
-<strong>Fix:</strong> Rebuild the image from the official <ic>Dockerfile</ic> (it installs <ic>default-jre-headless</ic>). Check <ic>docker compose logs sn-sql-api</ic> for the stack trace. For native <ic>pip</ic> runs, install a full JDK and ensure <ic>java -version</ic> works on <ic>PATH</ic>.`
-        },
-        {
-          title: '✗ Connection refused / timeout',
-          body: `<strong>Cause A — IP not in allowlist:</strong> The most common reason. The container's egress IP is not in the SQL API IP filter criteria on the ServiceNow instance.<br><br>
-Find the egress IP (from the host or container) and add it under <ic>SQL API → IP filter criteria</ic>.<br><br>
-<strong>Cause B — SQL API not enabled:</strong> A ServiceNow admin needs to activate the SQL API feature. Check under <ic>System Definition → Plugins</ic>.<br><br>
-<strong>Cause C — Wrong instance URL:</strong> Confirm the URL is reachable: <ic>curl -I https://<span data-tpl="instance">mycompany</span>.service-now.com</ic>`
-        },
-        {
-          title: '✗ ClassNotFoundException — driver class not found',
-          body: `<strong>Cause:</strong> <ic>SN_JDBC_DRIVER_CLASS</ic> does not match the driver inside your JAR.<br><br>
-<strong>Fix:</strong> Inspect the JAR inside the running container:
-<div class="cw" style="margin:10px 0"><div class="ch"><span class="clang">bash</span></div><div class="cb">docker compose exec sn-sql-api jar tf <span data-tpl="jar">/app/drivers/servicenow-jdbc.jar</span> | grep -i driver</div></div>
-Set <ic>SN_JDBC_DRIVER_CLASS</ic> to the documented class for that JAR (often <ic>com.snc.db.jdbc.JDBCDriver</ic> or <ic>com.simba.servicenow.jdbc.Driver</ic>).`
-        },
-        {
-          title: '✗ HTTP 401 Invalid API key',
-          body: `<strong>Cause:</strong> <ic>API_KEY</ic> is set in <ic>.env</ic> but the request is missing <ic>x-api-key</ic> or the value does not match.<br><br>
-<strong>Fix:</strong> Send <ic>-H "x-api-key: YOUR_KEY"</ic> on POST <ic>/query</ic>, <ic>/schema/tables</ic>, <ic>/schema/columns</ic>, <ic>/health/check</ic>, and <ic>/debug/jdbc-auth</ic>. GET <ic>/health</ic> stays unauthenticated. The bundled web UI does not send the key — use curl, Swagger, a proxy, or unset <ic>API_KEY</ic> for local-only use.`
-        },
-        {
-          title: '✗ Authentication failure on JDBC (not HTTP 401)',
-          body: `<strong>Cause:</strong> Wrong JDBC user/password, or the service account is missing the <ic>sn_jdbc_rest_access</ic> role.<br><br>
-<strong>Checklist:</strong><br>
-&nbsp;1. Verify <ic>SN_USERNAME</ic> is the <strong>User ID</strong> field, not the display name.<br>
-&nbsp;2. Verify the account is not locked (<ic>Locked out</ic> on the user record).<br>
-&nbsp;3. Confirm the role <ic>sn_jdbc_rest_access</ic> is assigned.<br>
-&nbsp;4. For Simba URLs, ensure <ic>User</ic> and <ic>Password</ic> appear in the JDBC URL or use the server-built Simba URL from <ic>src/config.py</ic>.`
-        },
-        {
-          title: '✗ Table not found / permission denied on query',
-          body: `<strong>Cause:</strong> The service account does not have read access to the table, or the table is not enabled for SQL API access.<br><br>
-<strong>Fix:</strong> In ServiceNow, open <ic>SQL API → Table Access</ic> and verify the table and roles. ACLs still apply.`
-        },
-      ],
-    },
   },
 
   pt: {
-    headerTitle: 'ServiceNow SQL API · FastAPI · Guia passo a passo',
+    headerTitle: 'ServiceNow SQL API · assistente sn-sql-api',
     sbLabel: 'Etapas',
     cfgPanelTitle: 'Config da sua instância',
     lblInstance: 'Nome da instância',
@@ -623,7 +648,7 @@ Set <ic>SN_JDBC_DRIVER_CLASS</ic> to the documented class for that JAR (often <i
     zipPanelTitle: 'ZIP inicial',
     zipDlLabel: 'sn-sql-api-starter.zip',
     zipToast: '✓ sn-sql-api-starter.zip baixado',
-    repoBanner: '<a href="https://github.com/rafamessias/sn-sql-api" target="_blank" rel="noopener noreferrer">rafamessias/sn-sql-api</a> · Faça clone, coloque o <ic>.jar</ic> em <ic>drivers/</ic>, preencha o <ic>.env</ic> e rode <ic>docker compose up --build</ic>. Doc JDBC: <a href="https://www.servicenow.com/docs/r/api-reference/web-services/configure-jdbc-driver.html" target="_blank" rel="noopener noreferrer">Configure JDBC driver</a>.',
+    repoBanner: '<strong>Este assistente</strong> explica a <strong>SQL API</strong> da plataforma, aponta para a <strong>documentação ServiceNow</strong> e guia o clone de <a href="https://github.com/rafamessias/sn-sql-api" target="_blank" rel="noopener noreferrer">sn-sql-api</a>, configuração da instância, Docker e a primeira query. JDBC: <a href="https://www.servicenow.com/docs/r/api-reference/web-services/configure-jdbc-driver.html" target="_blank" rel="noopener noreferrer">Configure JDBC driver</a> · <a href="https://www.servicenow.com/docs/r/zurich/platform-security/connections-and-credentials/create-JDBC-connection.html" target="_blank" rel="noopener noreferrer">Create JDBC connection</a>.',
     repoGuideBadge: 'Assistente',
     persistLabel: 'salvo',
     trefSearchPlaceholder: 'Buscar tabelas ou colunas…',
@@ -646,20 +671,185 @@ Set <ic>SN_JDBC_DRIVER_CLASS</ic> to the documented class for that JAR (often <i
     copy: 'copiar', copied: '✓ copiado',
     back: '← Voltar', next: 'Próxima etapa →', complete: '✓ Concluir', restart: '↺ Recomeçar',
     steps: [
-      { title: 'Pré-requisitos',       short: 'Pré-req.'  },
-      { title: 'Layout do repositório', short: 'Layout' },
-      { title: 'Imagem Docker',        short: 'Docker'  },
-      { title: 'Dependências Python',  short: 'Deps'    },
-      { title: 'Configuração',         short: 'Config'  },
-      { title: 'Subir com Compose',    short: 'Compose' },
-      { title: 'Verificar a API',      short: 'Verificar' },
-      { title: 'Solução de problemas', short: 'Debug'   },
-      { title: 'Exemplos HTTP',        short: 'HTTP'    },
-      { title: 'Desenvolvimento local', short: 'Dev'    },
+      { title: 'O que é SQL API?',     short: 'SQL API' },
+      { title: 'Pré-requisitos',       short: 'Pré-req.' },
+      { title: 'Baixar o projeto',     short: 'Clone' },
+      { title: 'Driver JDBC & stack',  short: 'Driver' },
+      { title: 'Configurar instância', short: 'Config' },
+      { title: 'Rodar Docker',         short: 'Docker' },
+      { title: 'Rodar uma query',      short: 'Query' },
+      { title: 'Solução de problemas', short: 'Debug' },
+      { title: 'Snippets HTTP',       short: 'HTTP' },
+      { title: 'Desenvolvimento local', short: 'Dev' },
     ],
+    sqlApiIntro: {
+      stepNum: 'Etapa 01',
+      title: 'O que é a SQL API do ServiceNow?',
+      desc: 'Na sua instância, a <strong>SQL API</strong> (aplicação da Store, instalada por instância) permite que clientes autorizados executem SQL sobre os dados da plataforma com o mesmo modelo de segurança do restante da instância — não é outro banco, e sim <strong>acesso controlado</strong> via JDBC.',
+      p1: 'Fluxo típico: baixar o <strong>driver JDBC específico da instância</strong>, usar a <strong>classe do driver</strong> e o <strong>formato de URL JDBC</strong> da documentação ServiceNow, autenticar com uma <strong>conta de serviço</strong> com a role <ic>sn_jdbc_rest_access</ic> e liberar o <strong>IP de saída</strong> do cliente nos critérios de filtro de IP da SQL API.',
+      p2: 'O projeto <strong>sn-sql-api</strong> no GitHub é uma camada de conveniência: um container <strong>FastAPI</strong> que carrega o driver JDBC oficial (via JayDeBeApi) e expõe REST — principalmente <ic>POST /query</ic> — e um console SQL opcional no navegador, para você prototipar em Docker na sua máquina.',
+      docHeading: 'Documentação oficial ServiceNow (siga a família / release da sua instância)',
+      linkJdbc: 'Configure JDBC driver',
+      linkJdbcHref: 'https://www.servicenow.com/docs/r/api-reference/web-services/configure-jdbc-driver.html',
+      linkConn: 'Create JDBC connection',
+      linkConnHref: 'https://www.servicenow.com/docs/r/zurich/platform-security/connections-and-credentials/create-JDBC-connection.html',
+      linkStore: 'SQL API — ServiceNow Store (instale na instância; o download do driver fica na UI da instância)',
+      linkStoreHref: 'https://store.servicenow.com/store/app/699af7c347404f90040ae738436d4350',
+      flowTeaser: '<strong>Próximas etapas neste assistente:</strong> pré-requisitos → clone do repositório → colocar o JAR JDBC → preencher <ic>.env</ic> → <ic>docker compose up --build</ic> → executar SQL no Swagger, curl ou na UI web.',
+    },
+    prereqs: {
+      stepNum: 'Etapa 02',
+      title: 'Checklist de pré-requisitos',
+      desc: 'Confirme o lado ServiceNow e a sua máquina antes de subir o container.',
+      progress: 'Concluídos',
+      of: '/',
+      items: [
+        { title: 'URL da instância ServiceNow confirmada',    desc: 'Você sabe o host da instância — ex. <ic>minhaempresa.service-now.com</ic> (o nome curto <ic>minhaempresa</ic> vale em <ic>SN_INSTANCE</ic>).' },
+        { title: 'Conta de serviço criada com a role correta', desc: 'Um admin atribuiu a role <ic>sn_jdbc_rest_access</ic> ao usuário JDBC.' },
+        { title: 'Filtro de IP da SQL API configurado',        desc: 'O IP de saída da máquina ou do container está permitido nos critérios de filtro de IP da SQL API.' },
+        { title: 'Driver JAR do JDBC baixado',                 desc: 'O <ic>.jar</ic> específico da instância está no host em <ic>./drivers/</ic> (montado somente leitura em <ic>/app/drivers/</ic>). Veja <a href="https://www.servicenow.com/docs/r/api-reference/web-services/configure-jdbc-driver.html" target="_blank" rel="noopener" style="color:var(--blue);text-decoration:underline">Configure JDBC driver</a>.' },
+        { title: 'Docker instalado e em execução',             desc: 'Execute <ic>docker compose version</ic> para confirmar o Compose v2.' },
+      ],
+      warn: '<strong>Como o projeto conecta:</strong> o <strong>FastAPI</strong> expõe REST; <strong>JayDeBeApi + JPype1</strong> rodam no processo da API e falam JDBC. A imagem instala JRE headless — você não configura <ic>JAVA_HOME</ic> manualmente no container padrão.',
+    },
+    cloneRepo: {
+      stepNum: 'Etapa 03',
+      title: 'Baixar este projeto',
+      desc: 'Obtenha uma cópia local do <strong>sn-sql-api</strong>. Nos passos seguintes você adiciona <ic>drivers/*.jar</ic> e um <ic>.env</ic> na raiz — nada além disso é obrigatório para seguir o guia.',
+      divClone: 'Clone com Git',
+      cmtClone: '# HTTPS (recomendado na primeira vez)',
+      divZip: 'Ou use o ZIP inicial',
+      zipHint: 'Use o botão <strong>ZIP inicial</strong> na barra lateral para baixar um modelo de <ic>.env</ic> e notas rápidas; depois mescle no diretório do clone.',
+      info: '<strong>Layout após o clone:</strong> o código da API fica em <ic>src/</ic>; a UI do navegador é gerada a partir de <ic>web/</ic> para <ic>src/static/dist/</ic> no build da imagem Docker.',
+      warn: '<strong>Nunca faça commit de segredos nem do JAR.</strong> Mantenha <ic>.env</ic> e <ic>drivers/*.jar</ic> locais e no <ic>.gitignore</ic> como no repositório upstream.',
+      cmt1: '# FastAPI + cliente JDBC', cmt2: '# UI compilada → servida em /', cmt3: '# JAR da sua instância (fora do git)',
+    },
+    jdbcStack: {
+      stepNum: 'Etapa 04',
+      title: 'Driver JDBC e o que o Docker monta',
+      desc: 'Coloque o <strong>arquivo de driver da sua instância ServiceNow</strong> na sua máquina; o Docker instala o restante. Menus variam por release; em geral o admin instala o app SQL API pela Store e o download do JDBC fica em <ic>SQL API → Downloads</ic> (ou equivalente) na instância.',
+      jarTitle: 'Pasta drivers/ no seu computador',
+      jarBody: 'Salve o JAR por exemplo em <ic>./drivers/servicenow-jdbc.jar</ic>. O Compose monta <ic>./drivers</ic> somente leitura em <ic>/app/drivers</ic>. Em <ic>.env</ic>, defina <ic>SN_JDBC_JAR_PATH</ic> como o <strong>caminho dentro do container</strong> desse arquivo.',
+      stackTitle: 'O que o Dockerfile faz (resumo)',
+      cmt1: '# Estágio 1 — npm run build em web/',
+      cmt2: '# Estágio 2 — Python + JRE headless para JDBC',
+      cmt3: '# Ponte JDBC: jaydebeapi + JPype1',
+      warn: '<strong>Driver vs URL:</strong> alinhe <ic>SN_JDBC_DRIVER_CLASS</ic> ao seu JAR (nativo <ic>com.snc.db.jdbc.JDBCDriver</ic> vs Simba <ic>com.simba.servicenow.jdbc.Driver</ic>). Use o formato de URL da documentação oficial ou defina <ic>SN_JDBC_URL</ic> — veja <ic>src/config.py</ic>.',
+      divBuild: 'Quando for fazer o build',
+      cmtBuild: '# Na raiz do repositório (após preencher o .env)',
+      depsTitle: 'Dependências Python fixadas (trecho)',
+      info: 'Versões exatas estão no repositório; atualize só quando quiser.',
+      col1: 'Pacote', col2: 'Função', col3: 'Observações',
+      row1desc: 'Camada REST para <ic>/query</ic>, <ic>/schema/*</ic>, <ic>/health</ic>, …',
+      row2desc: 'Servidor ASGI iniciado pelo container.',
+    },
+    connection: {
+      stepNum: 'Etapa 05',
+      title: 'Configurar sua instância (.env)',
+      desc: 'Mapeie instância ServiceNow, usuário JDBC, senha, classe do driver e caminho do JAR para variáveis de ambiente. O container lê tudo via <ic>src/config.py</ic> (pydantic-settings). Use o <strong>painel à esquerda</strong> para gerar um arquivo inicial.',
+      cmt1: '# Obrigatórias',
+      cmt2: '# Opcional — URL JDBC completa da doc / instância',
+      cmt3: '# Opcional — se definido, protege POST /query, /schema/*, /health/check, /debug/jdbc-auth',
+      cmt6: '# Opcional — true = modo headless (somente API REST, sem UI em /)',
+      cmt4: '# JAR nativo da instância costuma usar com.snc.db.jdbc.JDBCDriver',
+      cmt5: '# Driver Simba padrão no código: com.simba.servicenow.jdbc.Driver',
+      doc1: '',
+      doc2: '',
+      warn: '<strong>Override por requisição:</strong> o corpo JSON pode incluir um objeto <ic>connection</ic> com <ic>url</ic>, <ic>user</ic>, <ic>password</ic> e <ic>driver_class</ic> opcional — veja o OpenAPI em <ic>/docs</ic>.',
+    },
+    run: {
+      stepNum: 'Etapa 06', title: 'Rodar Docker',
+      desc: 'Na raiz do repositório, o Compose faz build da imagem, monta <ic>drivers/</ic>, carrega <ic>.env</ic> e publica a API na porta <strong>8000</strong>.',
+      divBuild: 'iniciar',
+      divRun: 'O que você obtém',
+      divCompose: 'trecho do compose (do repositório)',
+      divEnv: 'arquivo .env',
+      envDesc: 'Use o painel à esquerda para instância, usuário, senha e caminho do JAR; baixe ou copie. Adicione <ic>SN_JDBC_URL</ic>, <ic>API_KEY</ic> ou <ic>API_ONLY=true</ic> (modo headless — sem UI em <ic>/</ic>) no editor se precisar.',
+      envRunCmd: '# Depois de drivers/ e .env prontos',
+      info: '<strong>Segurança:</strong> <ic>/query</ic> executa SQL arbitrário. Não exponha o container publicamente sem política de rede, autenticação no proxy, etc.',
+      cmtCompose: '# serviço sn-sql-api — veja o arquivo completo no repositório',
+    },
+    verify: {
+      stepNum: 'Etapa 07', title: 'Rodar sua primeira query',
+      desc: 'Com a stack no ar, confirme o <ic>/health</ic> e envie SQL para <ic>POST /query</ic>. Use o Swagger para a primeira execução guiada ou cole os exemplos em curl.',
+      prereqBox: '<strong>Antes de começar:</strong> os containers estão no ar, o <ic>.env</ic> tem credenciais reais e o arquivo JDBC existe em <ic>SN_JDBC_JAR_PATH</ic> dentro do container.',
+      div0: '1 — liveness',
+      p0: 'GET <ic>/health</ic> não exige API key e confirma o processo e a classe do driver configurada:',
+      langShell: 'bash — host',
+      cmtShell1: '',
+      cmtJar: '',
+      cmtExit: '',
+      langExpected: 'exemplo JSON',
+      cmt1: '',
+      cmt2: '',
+      cmt3: '',
+      warn: '',
+      div1: '2 — SQL via POST /query',
+      p1: 'Envie JSON <ic>{"query":"…"}</ic>. Array opcional <ic>parameters</ic>. Se <ic>API_KEY</ic> estiver definido, inclua <ic>-H "x-api-key: …"</ic>.',
+      langRun: 'bash — host',
+      cmtRun: '',
+      flagNote: 'Formato da resposta: <ic>{"columns":[],"rows":[],"row_count":n}</ic> (nomes de colunas e linhas alinhadas).',
+      cmtExpected: '',
+      ok: 'HTTP 200 com linhas indica JDBC, autenticação e acesso à SQL API ponta a ponta.',
+      div2: '3 — teste JDBC (opcional)',
+      p2: 'POST <ic>/health/check</ic> abre uma conexão JDBC com os padrões do servidor ou um objeto <ic>connection</ic> opcional no corpo. Exige <ic>x-api-key</ic> quando <ic>API_KEY</ic> está configurado.',
+      langVol: 'bash — host',
+      cmtVol: '',
+      volNote: 'Abra <ic>http://localhost:8000/docs</ic> para testar todas as operações.',
+      winNote: '<strong>UI no navegador:</strong> Com o bundle de produção e <ic>API_ONLY</ic> não definido (ou <ic>false</ic>), <ic>http://localhost:8000/</ic> serve o console SQL (abas Editor, Schema, Conexões). Com <ic>API_ONLY=true</ic>, <ic>/</ic> mostra uma página mínima e os endpoints REST continuam disponíveis.',
+      div3: '4 — descoberta de schema',
+      p3: 'POST <ic>/schema/tables</ic> com <ic>pattern</ic> opcional (LIKE SQL). POST <ic>/schema/columns</ic> com <ic>{"table":"incident"}</ic>. Ambos respeitam <ic>API_KEY</ic> como <ic>/query</ic>.',
+      cmtScript1: '',
+      cmtScript2: '',
+      chmodNote: '',
+    },
+    trouble: {
+      stepNum: 'Etapa 08', title: 'Solução de problemas',
+      desc: 'Clique em um erro para expandir o diagnóstico e a solução.',
+      issues: [
+        {
+          title: '✗ Erros de JVM / Java na subida ou na primeira query',
+          body: `<strong>Causa:</strong> o JPype não consegue iniciar a JVM (JRE ausente, arquitetura errada ou instalação corrompida).<br><br>
+<strong>Correção:</strong> refaça o build com o <ic>Dockerfile</ic> oficial (instala <ic>default-jre-headless</ic>). Veja <ic>docker compose logs sn-sql-api</ic>. Em execução nativa com <ic>pip</ic>, instale um JDK completo e confira <ic>java -version</ic> no <ic>PATH</ic>.`
+        },
+        {
+          title: '✗ Conexão recusada / timeout',
+          body: `<strong>Causa A — IP fora da lista:</strong> a mais comum. O IP de saída do container não está nos critérios de filtro de IP da SQL API.<br><br>
+Descubra o IP de saída e adicione em <ic>SQL API → IP filter criteria</ic>.<br><br>
+<strong>Causa B — SQL API desabilitada:</strong> um admin precisa ativar a feature. Verifique <ic>System Definition → Plugins</ic>.<br><br>
+<strong>Causa C — URL da instância incorreta:</strong> confirme com <ic>curl -I https://<span data-tpl="instance">minhaempresa</span>.service-now.com</ic>`
+        },
+        {
+          title: '✗ ClassNotFoundException — classe do driver não encontrada',
+          body: `<strong>Causa:</strong> <ic>SN_JDBC_DRIVER_CLASS</ic> não corresponde ao driver dentro do seu JAR.<br><br>
+<strong>Correção:</strong> inspecione o JAR dentro do container em execução:
+<div class="cw" style="margin:10px 0"><div class="ch"><span class="clang">bash</span></div><div class="cb">docker compose exec sn-sql-api jar tf <span data-tpl="jar">/app/drivers/servicenow-jdbc.jar</span> | grep -i driver</div></div>
+Defina <ic>SN_JDBC_DRIVER_CLASS</ic> conforme a classe documentada desse JAR (muitas vezes <ic>com.snc.db.jdbc.JDBCDriver</ic> ou <ic>com.simba.servicenow.jdbc.Driver</ic>).`
+        },
+        {
+          title: '✗ HTTP 401 Invalid API key',
+          body: `<strong>Causa:</strong> <ic>API_KEY</ic> está no <ic>.env</ic>, mas a requisição não envia <ic>x-api-key</ic> ou o valor não confere.<br><br>
+<strong>Correção:</strong> envie <ic>-H "x-api-key: SUA_CHAVE"</ic> nos POST <ic>/query</ic>, <ic>/schema/tables</ic>, <ic>/schema/columns</ic>, <ic>/health/check</ic> e <ic>/debug/jdbc-auth</ic>. GET <ic>/health</ic> segue sem autenticação. A UI empacotada não envia a chave — use curl, Swagger, um proxy ou remova <ic>API_KEY</ic> em uso local confiável.`
+        },
+        {
+          title: '✗ Falha de autenticação JDBC (não é HTTP 401)',
+          body: `<strong>Causa:</strong> usuário/senha JDBC incorretos ou falta da role <ic>sn_jdbc_rest_access</ic>.<br><br>
+<strong>Checklist:</strong><br>
+&nbsp;1. Confirme que <ic>SN_USERNAME</ic> é o <strong>User ID</strong>, não o nome de exibição.<br>
+&nbsp;2. Conta não bloqueada (<ic>Locked out</ic>).<br>
+&nbsp;3. Role <ic>sn_jdbc_rest_access</ic> atribuída.<br>
+&nbsp;4. Em URLs Simba, <ic>User</ic> e <ic>Password</ic> devem constar na URL JDBC ou use a URL Simba montada pelo servidor em <ic>src/config.py</ic>.`
+        },
+        {
+          title: '✗ Tabela não encontrada / permissão negada na query',
+          body: `<strong>Causa:</strong> a conta não tem leitura na tabela ou a tabela não está liberada na SQL API.<br><br>
+<strong>Correção:</strong> no ServiceNow, <ic>SQL API → Table Access</ic>, tabelas e roles. ACLs continuam valendo.`
+        },
+      ],
+    },
     queryRunner: {
       stepNum: 'Etapa 09',
-      title: 'Exemplos HTTP',
+      title: 'Snippets HTTP',
       desc: 'Chamadas prontas em <strong>curl</strong> e <strong>Python</strong> contra a API em <ic>http://localhost:8000</ic>. O SQL é achatado em uma linha para colar no shell com segurança. Ajuste <ic>SN_JDBC_DRIVER_CLASS</ic> ao seu JAR (Simba vs nativo).',
       tplLabel: 'Modelos',
       fmtLabel: 'Gerar',
@@ -718,148 +908,6 @@ Set <ic>SN_JDBC_DRIVER_CLASS</ic> to the documented class for that JAR (often <i
       winNote: '<strong>API_KEY:</strong> Se definido no <ic>.env</ic>, os POST <ic>/query</ic>, <ic>/schema/*</ic>, <ic>/health/check</ic> e <ic>/debug/jdbc-auth</ic> exigem o header <ic>x-api-key</ic>. A UI empacotada não envia a chave — use curl, um gateway ou deixe vazio em ambiente local confiável.',
       javaHomeNote: '<strong>Placeholder na raiz:</strong> Sem <ic>src/static/dist/index.html</ic>, a rota <ic>/</ic> mostra instruções de dev; os endpoints da API continuam ativos.',
     },
-    prereqs: {
-      stepNum: 'Etapa 01',
-      title: 'Checklist de pré-requisitos',
-      desc: 'Confirme estes itens antes de subir a stack a partir do repositório GitHub.',
-      progress: 'Concluídos',
-      of: '/',
-      items: [
-        { title: 'URL da instância ServiceNow confirmada',    desc: 'Você sabe o host da instância — ex. <ic>minhaempresa.service-now.com</ic> (o nome curto <ic>minhaempresa</ic> vale em <ic>SN_INSTANCE</ic>).' },
-        { title: 'Conta de serviço criada com a role correta', desc: 'Um admin atribuiu a role <ic>sn_jdbc_rest_access</ic> ao usuário JDBC.' },
-        { title: 'Filtro de IP da SQL API configurado',        desc: 'O IP de saída da máquina ou do container está permitido nos critérios de filtro de IP da SQL API.' },
-        { title: 'Driver JAR do JDBC baixado',                 desc: 'O <ic>.jar</ic> específico da instância está no host em <ic>./drivers/</ic> (montado somente leitura em <ic>/app/drivers/</ic>). Veja <a href="https://www.servicenow.com/docs/r/api-reference/web-services/configure-jdbc-driver.html" target="_blank" rel="noopener" style="color:var(--blue);text-decoration:underline">Configure JDBC driver</a>.' },
-        { title: 'Docker instalado e em execução',             desc: 'Execute <ic>docker compose version</ic> para confirmar o Compose v2.' },
-      ],
-      warn: '<strong>Como o projeto conecta:</strong> o <strong>FastAPI</strong> expõe REST; <strong>JayDeBeApi + JPype1</strong> rodam no processo da API e falam JDBC. A imagem instala JRE headless — você não configura <ic>JAVA_HOME</ic> manualmente no container padrão.',
-    },
-    structure: {
-      stepNum: 'Etapa 02', title: 'Layout do repositório',
-      desc: 'Faça clone de <a href="https://github.com/rafamessias/sn-sql-api" target="_blank" rel="noopener" style="color:var(--blue);text-decoration:underline">rafamessias/sn-sql-api</a>. Você só adiciona o JAR JDBC em <ic>drivers/</ic> e um <ic>.env</ic> na raiz — o código do serviço já vem no repositório.',
-      info: '<strong>Caminho do JAR:</strong> O padrão no compose é <ic>./drivers</ic> → <ic>/app/drivers</ic> no container. Defina <ic>SN_JDBC_JAR_PATH</ic> com o caminho exato do arquivo dentro do container (por exemplo <ic>/app/drivers/servicenow-jdbc.jar</ic>).',
-      warn: '<strong>Nunca faça commit do JAR nem de segredos reais.</strong> Mantenha <ic>drivers/*.jar</ic> e <ic>.env</ic> fora do git.',
-      cmt1: '# FastAPI + cliente JDBC', cmt2: '# UI compilada → servida em /', cmt3: '# JAR da sua instância (fora do git)',
-    },
-    dockerfile: {
-      stepNum: 'Etapa 03', title: 'Imagem Docker (do repositório)',
-      desc: 'O <ic>Dockerfile</ic> mantido compila a UI Preact, instala dependências Python e copia <ic>src/</ic> mais os estáticos gerados. Em um primeiro deploy você normalmente não precisa editar este arquivo.',
-      cmt1: '# Estágio 1 — npm run build em web/',
-      cmt2: '# Estágio 2 — python:3.11-slim + default-jre-headless',
-      cmt3: '# Ponte JDBC: jaydebeapi + JPype1 (veja requirements.txt)',
-      warn: '<strong>Driver vs formato de URL:</strong> Se <ic>SN_JDBC_DRIVER_CLASS</ic> for <ic>com.snc.db.jdbc.JDBCDriver</ic>, a API usa <ic>jdbc:servicenow://https://…</ic> com user/senha nas propriedades JDBC. Para o driver Simba, use a URL com ponto e vírgula da documentação oficial ou defina <ic>SN_JDBC_URL</ic>.',
-      divBuild: 'Build típico',
-      cmtBuild: '# Na raiz do repositório clonado',
-    },
-    reqs: {
-      stepNum: 'Etapa 04', title: 'requirements.txt',
-      desc: 'Dependências fixadas do servidor no repositório. O acesso JDBC continua via JayDeBeApi; FastAPI e Uvicorn expõem a camada HTTP.',
-      info: '<strong>Versões:</strong> o repositório é a fonte da verdade; atualize alinhado a releases ou correções de segurança.',
-      col1: 'Pacote', col2: 'Função', col3: 'Observações',
-      row1desc: 'Framework web ASGI; define <ic>/query</ic>, <ic>/schema/*</ic>, <ic>/health</ic>, etc.',
-      row2desc: 'Servidor ASGI de produção usado no entrypoint do container.',
-    },
-    connection: {
-      stepNum: 'Etapa 05', title: 'Configuração (.env → Settings)',
-      desc: 'A API carrega configurações com <strong>pydantic-settings</strong> a partir de variáveis de ambiente (e opcionalmente <ic>.env</ic>). Os nomes abaixo correspondem a <ic>src/config.py</ic>.',
-      cmt1: '# Obrigatórias',
-      cmt2: '# Opcional — URL JDBC completa da doc / instância',
-      cmt3: '# Opcional — se definido, protege POST /query, /schema/*, /health/check, /debug/jdbc-auth',
-      cmt4: '# JAR nativo da instância costuma usar com.snc.db.jdbc.JDBCDriver',
-      cmt5: '# Driver Simba padrão no código: com.simba.servicenow.jdbc.Driver',
-      doc1: '',
-      doc2: '',
-      warn: '<strong>Override por requisição:</strong> o corpo JSON pode incluir um objeto <ic>connection</ic> com <ic>url</ic>, <ic>user</ic>, <ic>password</ic> e <ic>driver_class</ic> opcional — veja o OpenAPI em <ic>/docs</ic>.',
-    },
-    run: {
-      stepNum: 'Etapa 06', title: 'Subir com Docker Compose',
-      desc: 'Na raiz do repositório, o Compose faz build da imagem, monta <ic>drivers/</ic>, carrega <ic>.env</ic> e publica a API na porta <strong>8000</strong>.',
-      divBuild: 'iniciar',
-      divRun: 'O que você obtém',
-      divCompose: 'trecho do compose (do repositório)',
-      divEnv: 'arquivo .env',
-      envDesc: 'Use o painel à esquerda para instância, usuário, senha e caminho do JAR; baixe ou copie. Adicione <ic>SN_JDBC_URL</ic> ou <ic>API_KEY</ic> no editor se precisar.',
-      envRunCmd: '# Depois de drivers/ e .env prontos',
-      info: '<strong>Segurança:</strong> <ic>/query</ic> executa SQL arbitrário. Não exponha o container publicamente sem política de rede, autenticação no proxy, etc.',
-      cmtCompose: '# serviço sn-sql-api — veja o arquivo completo no repositório',
-    },
-    verify: {
-      stepNum: 'Etapa 07', title: 'Verificar a API',
-      desc: 'Com <ic>docker compose up --build</ic> em execução, estas chamadas atingem o FastAPI em <ic>http://localhost:8000</ic>.',
-      prereqBox: '<strong>Antes de começar:</strong> os containers estão no ar, o <ic>.env</ic> tem credenciais reais e o arquivo JDBC existe em <ic>SN_JDBC_JAR_PATH</ic> dentro do container.',
-      div0: '1 — liveness',
-      p0: 'GET <ic>/health</ic> não exige API key e confirma o processo e a classe do driver configurada:',
-      langShell: 'bash — host',
-      cmtShell1: '',
-      cmtJar: '',
-      cmtExit: '',
-      langExpected: 'exemplo JSON',
-      cmt1: '',
-      cmt2: '',
-      cmt3: '',
-      warn: '',
-      div1: '2 — SQL via POST /query',
-      p1: 'Envie JSON <ic>{"query":"…"}</ic>. Array opcional <ic>parameters</ic>. Se <ic>API_KEY</ic> estiver definido, inclua <ic>-H "x-api-key: …"</ic>.',
-      langRun: 'bash — host',
-      cmtRun: '',
-      flagNote: 'Formato da resposta: <ic>{"columns":[],"rows":[],"row_count":n}</ic> (nomes de colunas e linhas alinhadas).',
-      cmtExpected: '',
-      ok: 'HTTP 200 com linhas indica JDBC, autenticação e acesso à SQL API ponta a ponta.',
-      div2: '3 — teste JDBC (opcional)',
-      p2: 'POST <ic>/health/check</ic> abre uma conexão JDBC com os padrões do servidor ou um objeto <ic>connection</ic> opcional no corpo. Exige <ic>x-api-key</ic> quando <ic>API_KEY</ic> está configurado.',
-      langVol: 'bash — host',
-      cmtVol: '',
-      volNote: 'Abra <ic>http://localhost:8000/docs</ic> para testar todas as operações.',
-      winNote: '<strong>UI no navegador:</strong> Com o bundle de produção, <ic>http://localhost:8000/</ic> serve o console SQL (abas Editor, Schema, Conexões).',
-      div3: '4 — descoberta de schema',
-      p3: 'POST <ic>/schema/tables</ic> com <ic>pattern</ic> opcional (LIKE SQL). POST <ic>/schema/columns</ic> com <ic>{"table":"incident"}</ic>. Ambos respeitam <ic>API_KEY</ic> como <ic>/query</ic>.',
-      cmtScript1: '',
-      cmtScript2: '',
-      chmodNote: '',
-    },
-    trouble: {
-      stepNum: 'Etapa 08', title: 'Solução de problemas',
-      desc: 'Clique em um erro para expandir o diagnóstico e a solução.',
-      issues: [
-        {
-          title: '✗ Erros de JVM / Java na subida ou na primeira query',
-          body: `<strong>Causa:</strong> o JPype não consegue iniciar a JVM (JRE ausente, arquitetura errada ou instalação corrompida).<br><br>
-<strong>Correção:</strong> refaça o build com o <ic>Dockerfile</ic> oficial (instala <ic>default-jre-headless</ic>). Veja <ic>docker compose logs sn-sql-api</ic>. Em execução nativa com <ic>pip</ic>, instale um JDK completo e confira <ic>java -version</ic> no <ic>PATH</ic>.`
-        },
-        {
-          title: '✗ Conexão recusada / timeout',
-          body: `<strong>Causa A — IP fora da lista:</strong> a mais comum. O IP de saída do container não está nos critérios de filtro de IP da SQL API.<br><br>
-Descubra o IP de saída e adicione em <ic>SQL API → IP filter criteria</ic>.<br><br>
-<strong>Causa B — SQL API desabilitada:</strong> um admin precisa ativar a feature. Verifique <ic>System Definition → Plugins</ic>.<br><br>
-<strong>Causa C — URL da instância incorreta:</strong> confirme com <ic>curl -I https://<span data-tpl="instance">minhaempresa</span>.service-now.com</ic>`
-        },
-        {
-          title: '✗ ClassNotFoundException — classe do driver não encontrada',
-          body: `<strong>Causa:</strong> <ic>SN_JDBC_DRIVER_CLASS</ic> não corresponde ao driver dentro do seu JAR.<br><br>
-<strong>Correção:</strong> inspecione o JAR dentro do container em execução:
-<div class="cw" style="margin:10px 0"><div class="ch"><span class="clang">bash</span></div><div class="cb">docker compose exec sn-sql-api jar tf <span data-tpl="jar">/app/drivers/servicenow-jdbc.jar</span> | grep -i driver</div></div>
-Defina <ic>SN_JDBC_DRIVER_CLASS</ic> conforme a classe documentada desse JAR (muitas vezes <ic>com.snc.db.jdbc.JDBCDriver</ic> ou <ic>com.simba.servicenow.jdbc.Driver</ic>).`
-        },
-        {
-          title: '✗ HTTP 401 Invalid API key',
-          body: `<strong>Causa:</strong> <ic>API_KEY</ic> está no <ic>.env</ic>, mas a requisição não envia <ic>x-api-key</ic> ou o valor não confere.<br><br>
-<strong>Correção:</strong> envie <ic>-H "x-api-key: SUA_CHAVE"</ic> nos POST <ic>/query</ic>, <ic>/schema/tables</ic>, <ic>/schema/columns</ic>, <ic>/health/check</ic> e <ic>/debug/jdbc-auth</ic>. GET <ic>/health</ic> segue sem autenticação. A UI empacotada não envia a chave — use curl, Swagger, um proxy ou remova <ic>API_KEY</ic> em uso local confiável.`
-        },
-        {
-          title: '✗ Falha de autenticação JDBC (não é HTTP 401)',
-          body: `<strong>Causa:</strong> usuário/senha JDBC incorretos ou falta da role <ic>sn_jdbc_rest_access</ic>.<br><br>
-<strong>Checklist:</strong><br>
-&nbsp;1. Confirme que <ic>SN_USERNAME</ic> é o <strong>User ID</strong>, não o nome de exibição.<br>
-&nbsp;2. Conta não bloqueada (<ic>Locked out</ic>).<br>
-&nbsp;3. Role <ic>sn_jdbc_rest_access</ic> atribuída.<br>
-&nbsp;4. Em URLs Simba, <ic>User</ic> e <ic>Password</ic> devem constar na URL JDBC ou use a URL Simba montada pelo servidor em <ic>src/config.py</ic>.`
-        },
-        {
-          title: '✗ Tabela não encontrada / permissão negada na query',
-          body: `<strong>Causa:</strong> a conta não tem leitura na tabela ou a tabela não está liberada na SQL API.<br><br>
-<strong>Correção:</strong> no ServiceNow, <ic>SQL API → Table Access</ic>, tabelas e roles. ACLs continuam valendo.`
-        },
-      ],
-    },
   },
 };
 
@@ -915,6 +963,27 @@ let current = 0;
 const done = new Set();
 
 // ── Content builders ────────────────────────────────────
+function buildSqlApiIntro() {
+  const t = T().sqlApiIntro;
+  return `
+<div class="step-hdr">
+  <span class="step-num">${t.stepNum}</span>
+  <div><div class="step-title">${t.title}</div>
+  <div class="step-desc">${t.desc}</div></div>
+</div>
+<p>${t.p1}</p>
+<p>${t.p2}</p>
+<div class="alert a-info"><span class="ai">ℹ</span><div>
+  <strong>${t.docHeading}</strong>
+  <ul style="margin:8px 0 0 18px;color:var(--tm);line-height:1.75">
+    <li><a href="${t.linkJdbcHref}" target="_blank" rel="noopener noreferrer" style="color:var(--blue)">${t.linkJdbc}</a></li>
+    <li><a href="${t.linkConnHref}" target="_blank" rel="noopener noreferrer" style="color:var(--blue)">${t.linkConn}</a></li>
+    <li><a href="${t.linkStoreHref}" target="_blank" rel="noopener noreferrer" style="color:var(--blue)">${t.linkStore}</a></li>
+  </ul>
+</div></div>
+<div class="alert a-ok"><span class="ai">→</span><span>${t.flowTeaser}</span></div>`;
+}
+
 function buildPrereqs() {
   const t = T().prereqs;
   return `
@@ -935,43 +1004,51 @@ ${t.items.map(item => `
 <div class="alert a-warn"><span class="ai">⚠</span><span>${t.warn}</span></div>`;
 }
 
-function buildStructure() {
-  const t = T().structure;
+function buildCloneRepo() {
+  const t = T().cloneRepo;
   return `
 <div class="step-hdr">
   <span class="step-num">${t.stepNum}</span>
   <div><div class="step-title">${t.title}</div>
   <div class="step-desc">${t.desc}</div></div>
 </div>
+<div class="sdiv">${t.divClone}</div>
+<div class="cw">
+  <div class="ch"><span class="clang">bash</span><button class="copy-btn" onclick="copyCode(this)">${T().copy}</button></div>
+  <div class="cb"><span class="cmt">${t.cmtClone}</span>
+git clone https://github.com/rafamessias/sn-sql-api.git
+cd sn-sql-api</div>
+</div>
+<div class="sdiv">${t.divZip}</div>
+<p>${t.zipHint}</p>
 <div class="cw">
   <div class="ch"><span class="clang">repository tree</span><button class="copy-btn" onclick="copyCode(this)">${T().copy}</button></div>
   <div class="cb">sn-sql-api/
-├── <span class="pth">Dockerfile</span>                 <span class="cmt"># multi-stage: web build + Python runtime</span>
+├── <span class="pth">Dockerfile</span>
 ├── <span class="pth">docker-compose.yml</span>
-├── <span class="pth">docker-compose.dev.yml</span>     <span class="cmt"># optional hot reload</span>
-├── <span class="pth">docs/</span>                       <span class="cmt"># this wizard (GitHub Pages)</span>
+├── <span class="pth">docker-compose.dev.yml</span>
+├── <span class="pth">docs/</span>              <span class="cmt"># this wizard</span>
 ├── <span class="pth">requirements.txt</span>
-├── <span class="pth">src/</span>
-│   ├── <span class="pth">config.py</span>                 <span class="cmt">${t.cmt1}</span>
-│   ├── <span class="pth">jdbc_client.py</span>
-│   ├── <span class="pth">main.py</span>                   <span class="cmt"># FastAPI app</span>
-│   └── <span class="pth">static/dist/</span>              <span class="cmt">${t.cmt2}</span>
-├── <span class="pth">web/</span>                        <span class="cmt"># Preact + Vite + Tailwind</span>
-└── <span class="pth">drivers/</span>                    <span class="cmt">${t.cmt3}</span>
-    └── <span class="pth">servicenow-jdbc.jar</span>       <span class="cmt"># your filename</span></div>
+├── <span class="pth">src/</span>                <span class="cmt">${t.cmt1}</span>
+├── <span class="pth">web/</span>
+└── <span class="pth">drivers/</span>            <span class="cmt">${t.cmt3}</span>
+    └── <span class="pth">servicenow-jdbc.jar</span></div>
 </div>
 <div class="alert a-info"><span class="ai">ℹ</span><span>${t.info}</span></div>
 <div class="alert a-warn"><span class="ai">⚠</span><span>${t.warn}</span></div>`;
 }
 
-function buildDockerfile() {
-  const t = T().dockerfile;
+function buildJdbcAndStack() {
+  const t = T().jdbcStack;
   return `
 <div class="step-hdr">
   <span class="step-num">${t.stepNum}</span>
   <div><div class="step-title">${t.title}</div>
   <div class="step-desc">${t.desc}</div></div>
 </div>
+<div class="sdiv">${t.jarTitle}</div>
+<p>${t.jarBody}</p>
+<div class="sdiv">${t.stackTitle}</div>
 <div class="cw">
   <div class="ch"><span class="cfile">Dockerfile</span><button class="copy-btn" onclick="copyCode(this)">${T().copy}</button></div>
   <div class="cb"><span class="cmt">${t.cmt1}</span>
@@ -992,7 +1069,6 @@ function buildDockerfile() {
 <span class="kw">RUN</span> pip install --no-cache-dir -r /app/requirements.txt
 <span class="kw">COPY</span> src /app/src
 <span class="kw">COPY</span> --from=web-builder /web/dist /app/src/static/dist
-
 <span class="kw">EXPOSE</span> 8000
 <span class="kw">CMD</span> [<span class="str">"uvicorn"</span>, <span class="str">"src.main:app"</span>, <span class="str">"--host"</span>, <span class="str">"0.0.0.0"</span>, <span class="str">"--port"</span>, <span class="str">"8000"</span>]</div>
 </div>
@@ -1002,17 +1078,8 @@ function buildDockerfile() {
   <div class="ch"><span class="clang">bash</span><button class="copy-btn" onclick="copyCode(this)">${T().copy}</button></div>
   <div class="cb"><span class="cmt">${t.cmtBuild}</span>
 docker compose build</div>
-</div>`;
-}
-
-function buildReqs() {
-  const t = T().reqs;
-  return `
-<div class="step-hdr">
-  <span class="step-num">${t.stepNum}</span>
-  <div><div class="step-title">${t.title}</div>
-  <div class="step-desc">${t.desc}</div></div>
 </div>
+<div class="sdiv">${t.depsTitle}</div>
 <div class="cw">
   <div class="ch"><span class="cfile">requirements.txt</span><button class="copy-btn" onclick="copyCode(this)">${T().copy}</button></div>
   <div class="cb">fastapi==0.115.12
@@ -1069,10 +1136,13 @@ function buildConnection() {
 <span class="cmt">${t.cmt3}</span>
 <span class="cmt"># API_KEY=</span>
 
+<span class="cmt">${t.cmt6}</span>
+<span class="cmt"># API_ONLY=false</span>
+
 <span class="cmt">${t.cmt4}</span>
 <span class="cmt">${t.cmt5}</span></div>
 </div>
-<p style="font-size:13px;color:var(--tm)">See <ic>src/config.py</ic> for how <ic>SN_JDBC_URL</ic> overrides URL construction and how the native driver (<ic>com.snc.db.jdbc.JDBCDriver</ic>) switches to <ic>jdbc:servicenow://https://…</ic> with JDBC properties.</p>
+<p style="font-size:13px;color:var(--tm)">See <ic>src/config.py</ic> for how <ic>SN_JDBC_URL</ic> overrides URL construction and how the native driver (<ic>com.snc.db.jdbc.JDBCDriver</ic>) switches to <ic>jdbc:servicenow://https://…</ic> with JDBC properties. <ic>API_ONLY=true</ic> runs the container headless — the REST API stays available, but <ic>/</ic> shows a minimal landing page instead of the SQL console.</p>
 <div class="alert a-warn"><span class="ai">⚠</span><span>${t.warn}</span></div>`;
 }
 
@@ -1093,7 +1163,7 @@ function buildRun() {
 <ul style="color:var(--tm);font-size:13px;line-height:1.8;margin:0 0 16px 18px">
   <li><ic>http://localhost:8000/health</ic> — liveness (JSON)</li>
   <li><ic>http://localhost:8000/docs</ic> — Swagger UI</li>
-  <li><ic>http://localhost:8000/</ic> — web SQL console when <ic>src/static/dist</ic> is present</li>
+  <li><ic>http://localhost:8000/</ic> — web SQL console when <ic>src/static/dist</ic> is present and <ic>API_ONLY</ic> is unset (or <ic>false</ic>). With <ic>API_ONLY=true</ic>, <ic>/</ic> shows a minimal headless landing page instead.</li>
 </ul>
 <div class="alert a-info"><span class="ai">ℹ</span><span>${t.info}</span></div>
 <div class="sdiv">${t.divEnv}</div>
@@ -1333,7 +1403,7 @@ open http://localhost:5173/</div>
 <div class="alert a-warn"><span class="ai">ℹ</span><span>${t.javaHomeNote}</span></div>`;
 }
 
-const CONTENT = [buildPrereqs, buildStructure, buildDockerfile, buildReqs, buildConnection, buildRun, buildVerify, buildTrouble, buildQueryRunner, buildLocal];
+const CONTENT = [buildSqlApiIntro, buildPrereqs, buildCloneRepo, buildJdbcAndStack, buildConnection, buildRun, buildVerify, buildTrouble, buildQueryRunner, buildLocal];
 
 // ── .env helpers ────────────────────────────────────────
 function envContent() {
@@ -1347,6 +1417,7 @@ SN_JDBC_JAR_PATH=${cfg.jar}
 # Optional:
 # SN_JDBC_URL=
 # API_KEY=
+# API_ONLY=false   # set to true for headless (no web UI) production mode
 `;
 }
 
@@ -1680,6 +1751,7 @@ SN_JDBC_JAR_PATH=${cfg.jar}
 # Optional:
 # SN_JDBC_URL=
 # API_KEY=
+# API_ONLY=false   # set to true for headless (no web UI) production mode
 `;
 
   const envFile = envContent();

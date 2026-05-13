@@ -1,8 +1,12 @@
+import json
+import logging
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Any
 
-from fastapi import Depends, FastAPI, Header, HTTPException, status
-from fastapi.responses import HTMLResponse
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response, status
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, SecretStr
 
@@ -19,14 +23,51 @@ STATIC_DIR = Path(__file__).parent / "static"
 DIST_DIR = STATIC_DIR / "dist"
 DIST_INDEX = DIST_DIR / "index.html"
 
+
+class _LocalhostBindFilter(logging.Filter):
+    """Rewrite uvicorn's startup line so it shows localhost instead of 0.0.0.0.
+
+    Uvicorn binds to 0.0.0.0 to accept connections on every interface (which
+    is exactly what we want inside a container), but the raw bind address is
+    confusing in logs — the URL users can actually click from the host is
+    http://localhost:<port>. This filter only rewrites the printed message;
+    the bind address is unchanged.
+    """
+
+    _NEEDLE = "://0.0.0.0:"
+    _REPL = "://localhost:"
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        message = record.getMessage()
+        if self._NEEDLE not in message:
+            return True
+        # Pre-format the message so the rewrite is reliable regardless of how
+        # uvicorn passed the args (it logs via "%s" substitution).
+        record.msg = message.replace(self._NEEDLE, self._REPL)
+        record.args = None
+        return True
+
+
+logging.getLogger("uvicorn.error").addFilter(_LocalhostBindFilter())
+
 app = FastAPI(
     title="ServiceNow SQL API",
     description=(
         "Runs SQL against ServiceNow using the JDBC driver and URL format from "
-        "https://www.servicenow.com/docs/r/api-reference/web-services/configure-jdbc-driver.html"
+        "https://www.servicenow.com/docs/r/api-reference/web-services/configure-jdbc-driver.html\n\n"
+        "Made by Rafael Messias — https://www.linkedin.com/in/rafaelmessias/\n"
+        "Licensed under MIT. See `GET /about` for full credits."
     ),
     version="1.1.0",
     docs_url="/docs",
+    contact={
+        "name": "Rafael Messias",
+        "url": "https://www.linkedin.com/in/rafaelmessias/",
+    },
+    license_info={
+        "name": "MIT",
+        "url": "https://opensource.org/licenses/MIT",
+    },
 )
 
 
@@ -86,7 +127,6 @@ class ColumnInfo(BaseModel):
     nullable: bool
     internal_type: str | None = None
     field_type: str | None = None
-    function_field: bool | None = None
 
 
 class ColumnsResponse(BaseModel):
@@ -103,6 +143,30 @@ class HealthCheckResponse(BaseModel):
     instance: str | None = None
     driver_class: str | None = None
     error: str | None = None
+
+
+class EgressIpResponse(BaseModel):
+    """Public address used for outbound HTTPS from this API process (typical JDBC egress)."""
+
+    ip: str | None = None
+    error: str | None = None
+
+
+class AboutResponse(BaseModel):
+    """Authorship and license metadata — the hidden /about easter egg."""
+
+    author: str
+    linkedin: str | None = None
+    repository: str | None = None
+    license: str
+    license_summary: str
+    disclaimer: str
+    tagline: str
+    banner: str
+
+
+_EGRESS_PROBE_URL = "https://api.ipify.org?format=json"
+_EGRESS_PROBE_TIMEOUT_S = 8.0
 
 
 def verify_api_key(x_api_key: str | None = Header(default=None)) -> None:
@@ -128,6 +192,481 @@ def healthcheck() -> dict[str, str]:
         "instance": settings.sn_instance,
         "jdbc_driver_class": settings.sn_jdbc_driver_class,
     }
+
+
+_ABOUT_INFO = AboutResponse(
+    author="Rafael Messias",
+    linkedin="https://www.linkedin.com/in/rafaelmessias/",
+    repository="https://github.com/rafamessias/sn-sql-api",
+    license="MIT",
+    license_summary=(
+        "Released under the MIT License. You are free to use, copy, modify, "
+        "merge, publish, distribute, sublicense, and/or sell copies of this "
+        "software, as long as the copyright notice is preserved. Provided "
+        '"AS IS", without warranty of any kind.'
+    ),
+    disclaimer=(
+        "The author assumes no responsibility for how this software is used. "
+        "You alone are accountable for your deployments, queries, data "
+        "handling, and any downstream consequences."
+    ),
+    tagline=(
+        "Crafted with caffeine, JDBC and questionable amounts of curl by "
+        "Rafael Messias."
+    ),
+    banner="↓ ↘ → + A = Hadouken!🔥.. yes, you've just found an easter egg.",
+)
+
+
+_HADOUKEN_STYLES = """
+      .hadouken-overlay[hidden] { display: none; }
+      .hadouken-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 50;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(13, 17, 23, 0.95);
+        backdrop-filter: blur(8px);
+        padding: 24px;
+      }
+      .hadouken-card {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        max-width: 640px;
+        width: 100%;
+      }
+      .hadouken-fire {
+        font-size: 72px;
+        line-height: 1;
+        animation: hadouken-bounce 0.6s infinite;
+      }
+      .hadouken-title {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 96px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.15em;
+        color: #3fb950;
+        margin: 16px 0 0;
+        text-shadow: 0 0 24px rgba(63, 185, 80, 0.5);
+        animation: hadouken-shake 220ms ease-in-out infinite;
+      }
+      .hadouken-moves {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 14px;
+        letter-spacing: 0.4em;
+        color: #8b949e;
+        margin: 24px 0 8px;
+        text-transform: uppercase;
+      }
+      .hadouken-hint {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 12px;
+        color: #6e7681;
+      }
+      .hadouken-hint strong {
+        color: #3fb950;
+        font-weight: 600;
+      }
+      .hadouken-progress {
+        margin-top: 32px;
+        width: 100%;
+        height: 4px;
+        background: #21262d;
+        border-radius: 999px;
+        overflow: hidden;
+      }
+      .hadouken-progress > div {
+        height: 100%;
+        background: #3fb950;
+        width: 100%;
+        transition: width 100ms linear;
+      }
+      @keyframes hadouken-bounce {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-10px); }
+      }
+      @keyframes hadouken-shake {
+        0%, 100% { transform: translate(0, 0); }
+        25% { transform: translate(-2px, 1px); }
+        50% { transform: translate(2px, -1px); }
+        75% { transform: translate(-1px, 2px); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .hadouken-title, .hadouken-fire { animation: none; }
+      }
+      @media (max-width: 640px) {
+        .hadouken-title { font-size: 56px; }
+        .hadouken-fire { font-size: 56px; }
+      }
+"""
+
+
+_HADOUKEN_HTML = """
+    <div
+      class="hadouken-overlay"
+      id="hadouken-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="hadouken-title"
+      hidden
+    >
+      <div class="hadouken-card">
+        <div class="hadouken-fire" aria-hidden="true">🔥</div>
+        <h2 class="hadouken-title" id="hadouken-title">Hadouken!</h2>
+        <p class="hadouken-moves">↓ &nbsp; ↘ &nbsp; → &nbsp; + &nbsp; A</p>
+        <p class="hadouken-hint">
+          auto-closing in <strong id="hadouken-countdown">10</strong>s ·
+          press <kbd>Esc</kbd> to dismiss
+        </p>
+        <div class="hadouken-progress"><div id="hadouken-bar"></div></div>
+      </div>
+    </div>
+"""
+
+
+_HADOUKEN_SCRIPT = """
+    <script>
+      (function () {
+        var overlay = document.getElementById('hadouken-overlay');
+        var bar = document.getElementById('hadouken-bar');
+        var countdown = document.getElementById('hadouken-countdown');
+        if (!overlay || !bar || !countdown) return;
+
+        var RECENT_MS = 800;
+        var AUTO_CLOSE_MS = 10000;
+        var TICK_MS = 100;
+
+        var lastSeen = { down: 0, right: 0 };
+        var heldAt = { down: 0, right: 0 };
+        var intervalId = null;
+
+        function isRecent(t, now) {
+          return t > 0 && now - t <= RECENT_MS;
+        }
+
+        function openModal() {
+          overlay.hidden = false;
+          overlay.removeAttribute('hidden');
+          var startedAt = Date.now();
+
+          function tick() {
+            var elapsed = Date.now() - startedAt;
+            var remaining = Math.max(0, AUTO_CLOSE_MS - elapsed);
+            var progress = (remaining / AUTO_CLOSE_MS) * 100;
+            bar.style.width = progress + '%';
+            countdown.textContent = Math.ceil(remaining / 1000);
+            if (remaining === 0) closeModal();
+          }
+
+          if (intervalId) clearInterval(intervalId);
+          tick();
+          intervalId = setInterval(tick, TICK_MS);
+        }
+
+        function closeModal() {
+          overlay.hidden = true;
+          if (intervalId) {
+            clearInterval(intervalId);
+            intervalId = null;
+          }
+        }
+
+        document.addEventListener('keydown', function (event) {
+          if (event.ctrlKey || event.metaKey || event.altKey) return;
+
+          if (!overlay.hidden && event.key === 'Escape') {
+            closeModal();
+            return;
+          }
+
+          var key = event.key ? event.key.toLowerCase() : '';
+          var now = Date.now();
+
+          if (key === 'arrowdown') {
+            if (heldAt.down === 0) heldAt.down = now;
+            lastSeen.down = now;
+            return;
+          }
+          if (key === 'arrowright') {
+            if (heldAt.right === 0) heldAt.right = now;
+            lastSeen.right = now;
+            return;
+          }
+          if (key !== 'a' || event.repeat) return;
+
+          var downReady = heldAt.down > 0 || isRecent(lastSeen.down, now);
+          var rightReady = heldAt.right > 0 || isRecent(lastSeen.right, now);
+          var stillHeld = heldAt.down > 0 || heldAt.right > 0;
+
+          if (downReady && rightReady && stillHeld) {
+            lastSeen.down = 0;
+            lastSeen.right = 0;
+            openModal();
+          }
+        }, true);
+
+        document.addEventListener('keyup', function (event) {
+          var key = event.key ? event.key.toLowerCase() : '';
+          if (key === 'arrowdown') heldAt.down = 0;
+          else if (key === 'arrowright') heldAt.right = 0;
+        }, true);
+
+        window.addEventListener('blur', function () {
+          heldAt.down = 0;
+          heldAt.right = 0;
+        });
+
+        overlay.addEventListener('click', function (event) {
+          if (event.target === overlay) closeModal();
+        });
+      })();
+    </script>
+"""
+
+
+def _render_about_html(info: AboutResponse) -> str:
+    linkedin = info.linkedin or ""
+    repository = info.repository or ""
+    return f"""<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>sn-sql-api · credits</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <style>
+      :root {{ color-scheme: dark; }}
+      body {{
+        margin: 0;
+        font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        background: #0d1117;
+        color: #e6edf3;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+      }}
+      .card {{
+        max-width: 560px;
+        width: 100%;
+        background: #161b22;
+        border: 1px solid #3fb950;
+        border-radius: 12px;
+        padding: 28px 32px;
+        box-shadow: 0 0 0 3px rgba(63, 185, 80, 0.15);
+      }}
+      .eyebrow {{
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 11px;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+        color: #3fb950;
+        margin: 0 0 6px;
+      }}
+      h1 {{ margin: 0 0 16px; font-size: 18px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }}
+      p {{ color: #8b949e; line-height: 1.6; margin: 8px 0; font-size: 13px; }}
+      dl {{ margin: 12px 0; display: grid; grid-template-columns: 80px 1fr; gap: 8px 12px; font-size: 13px; }}
+      dt {{ color: #6e7681; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }}
+      dd {{ margin: 0; color: #e6edf3; }}
+      a {{ color: #3fb950; text-decoration: none; }}
+      a:hover {{ text-decoration: underline; }}
+      .egg-wrap {{
+        display: flex;
+        justify-content: flex-end;
+        margin-top: 10px;
+      }}
+      .egg-reveal {{
+        display: inline-flex;
+        flex-direction: row-reverse;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px 10px;
+        max-width: 100%;
+      }}
+      .egg-reveal > summary {{
+        list-style: none;
+        cursor: pointer;
+        width: 32px;
+        height: 32px;
+        flex-shrink: 0;
+        display: grid;
+        place-items: center;
+        border-radius: 8px;
+        border: 1px solid transparent;
+        font-size: 15px;
+        line-height: 1;
+        opacity: 0.28;
+        transition: opacity 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+        user-select: none;
+      }}
+      .egg-reveal > summary::-webkit-details-marker {{
+        display: none;
+      }}
+      .egg-reveal > summary:hover,
+      .egg-reveal > summary:focus-visible {{
+        opacity: 0.95;
+        border-color: #30363d;
+        background: #0d1117;
+        outline: none;
+      }}
+      .egg-reveal[open] > summary {{
+        opacity: 1;
+        border-color: #3fb950;
+        background: rgba(63, 185, 80, 0.08);
+      }}
+      .egg-body {{
+        margin: 0;
+        padding: 6px 10px;
+        border: 1px solid #30363d;
+        border-radius: 6px;
+        text-align: right;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        color: #3fb950;
+        font-size: 12px;
+        line-height: 1.35;
+        background: #0d1117;
+        min-width: 0;
+        flex: 1 1 auto;
+      }}
+      .disclaimer {{
+        margin-top: 14px;
+        padding: 10px 12px;
+        border: 1px solid #e3b341;
+        border-left-width: 3px;
+        border-radius: 6px;
+        color: #e3b341;
+        font-size: 12px;
+        line-height: 1.5;
+        background: rgba(227, 179, 65, 0.06);
+      }}
+      .disclaimer strong {{
+        display: block;
+        margin-bottom: 4px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 10px;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+      }}
+      .footer {{ margin-top: 18px; font-size: 11px; color: #6e7681; }}
+      kbd {{
+        background: #21262d;
+        border: 1px solid #30363d;
+        border-radius: 4px;
+        padding: 1px 5px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 11px;
+        color: #e6edf3;
+      }}
+{_HADOUKEN_STYLES}
+    </style>
+  </head>
+  <body>
+    <main class="card">
+      <p class="eyebrow">// credits</p>
+      <h1>sn-sql-api</h1>
+      <p>{info.tagline}</p>
+      <dl>
+        <dt>author</dt>
+        <dd><a href="{linkedin}" target="_blank" rel="noopener noreferrer">{info.author}</a></dd>
+        <dt>license</dt>
+        <dd>{info.license}</dd>
+        <dt>source</dt>
+        <dd><a href="{repository}" target="_blank" rel="noopener noreferrer">{repository}</a></dd>
+      </dl>
+      <p>{info.license_summary}</p>
+      <div class="disclaimer">
+        <strong>Disclaimer</strong>
+        {info.disclaimer}
+      </div>
+      <div class="egg-wrap">
+        <details class="egg-reveal">
+          <summary class="egg-trigger" title="Nothing to see here…" aria-label="Reveal a tiny secret">
+            🔥
+          </summary>
+          <div class="egg-body">{info.banner}</div>
+        </details>
+      </div>
+      <p class="footer">
+        Prefer JSON? <a href="/about?format=json">/about?format=json</a>
+        — or <code>curl -H 'Accept: application/json' /about</code>.
+        Back to the <a href="/">console</a>.
+      </p>
+    </main>
+{_HADOUKEN_HTML}
+{_HADOUKEN_SCRIPT}
+  </body>
+</html>
+"""
+
+
+def _wants_html(request: Request, format_param: str | None) -> bool:
+    """Browsers see HTML; fetch/curl/JSON clients see JSON."""
+    if format_param:
+        return format_param.lower() == "html"
+    accept = request.headers.get("accept", "").lower()
+    return "text/html" in accept
+
+
+@app.get(
+    "/about",
+    tags=["meta"],
+    summary="Author and license credits",
+    description=(
+        "Public credits endpoint. Browsers see a themed HTML page; "
+        "API clients (Accept: application/json or ?format=json) get the same "
+        "data as JSON. Also reachable from the web console via the Konami "
+        "code (↑ ↑ ↓ ↓ ← → ← → B A) or five quick clicks on the ⌘ logo."
+    ),
+    response_model=None,
+    responses={
+        200: {
+            "content": {
+                "application/json": {"schema": AboutResponse.model_json_schema()},
+                "text/html": {},
+            },
+        },
+    },
+)
+def about(request: Request, format: str | None = None) -> Response:
+    if _wants_html(request, format):
+        return HTMLResponse(_render_about_html(_ABOUT_INFO))
+    return JSONResponse(_ABOUT_INFO.model_dump())
+
+
+@app.get("/egress-ip", response_model=EgressIpResponse)
+def egress_ip() -> EgressIpResponse:
+    """Outbound public IP as seen from the internet (same NAT path as most JDBC deployments)."""
+    try:
+        request = urllib.request.Request(
+            _EGRESS_PROBE_URL,
+            headers={"User-Agent": "sn-sql-api egress-ip probe"},
+            method="GET",
+        )
+        with urllib.request.urlopen(request, timeout=_EGRESS_PROBE_TIMEOUT_S) as response:
+            raw = response.read().decode().strip()
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                candidate = parsed.get("ip")
+                if isinstance(candidate, str) and candidate.strip():
+                    return EgressIpResponse(ip=candidate.strip())
+        except json.JSONDecodeError:
+            pass
+        if raw and all(c.isprintable() for c in raw) and "\n" not in raw:
+            return EgressIpResponse(ip=raw)
+    except urllib.error.URLError as exc:
+        return EgressIpResponse(error=f"Could not reach ipify: {exc}")
+    except TimeoutError:
+        return EgressIpResponse(error="Timed out resolving egress address.")
+    except OSError as exc:
+        return EgressIpResponse(error=f"Network error: {exc}")
+
+    return EgressIpResponse(error="Unexpected response from egress probe.")
 
 
 @app.post(
@@ -231,7 +770,6 @@ def fetch_columns(payload: ColumnsRequest) -> ColumnsResponse:
             nullable=row["nullable"],
             internal_type=row.get("internal_type"),
             field_type=row.get("field_type"),
-            function_field=row.get("function_field"),
         )
         for row in rows
     ]
@@ -290,8 +828,9 @@ _DEV_FALLBACK_HTML = """<!doctype html>
       </p>
       <p>
         Then open <a href="http://localhost:5173">http://localhost:5173</a>
-        — it proxies <code>/query</code>, <code>/schema/*</code> and
-        <code>/health</code> to this API.
+        — it proxies <code>/query</code>, <code>/schema/*</code>,
+        <code>/health</code>, <code>/egress-ip</code>, and
+        <code>/about</code> to this API.
       </p>
       <p>
         To build a production bundle into the image, run
@@ -301,13 +840,107 @@ _DEV_FALLBACK_HTML = """<!doctype html>
       <p>
         API docs are always available at <a href="/docs">/docs</a>.
       </p>
+      <p style="margin-top:18px;font-size:11px;color:#6e7681;">
+        Made by
+        <a href="https://www.linkedin.com/in/rafaelmessias/"
+           target="_blank" rel="noopener noreferrer">Rafael Messias</a>
+        — MIT licensed. See <a href="/about">/about</a>.
+      </p>
     </main>
   </body>
 </html>
 """
 
 
-if DIST_INDEX.exists():
+_API_ONLY_HTML = """<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>sn-sql-api · API-only mode</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <style>
+      :root { color-scheme: dark; }
+      body {
+        margin: 0;
+        font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        background: #0d1117;
+        color: #e6edf3;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+      }
+      .card {
+        max-width: 560px;
+        background: #161b22;
+        border: 1px solid #30363d;
+        border-radius: 12px;
+        padding: 28px 32px;
+      }
+      .eyebrow {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 11px;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+        color: #3fb950;
+        margin: 0 0 6px;
+      }
+      h1 { margin: 0 0 8px; font-size: 18px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+      p { color: #8b949e; line-height: 1.6; margin: 8px 0; font-size: 13px; }
+      code {
+        background: #21262d;
+        border: 1px solid #30363d;
+        border-radius: 4px;
+        padding: 2px 6px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 12px;
+        color: #e6edf3;
+      }
+      a { color: #3fb950; text-decoration: none; }
+      a:hover { text-decoration: underline; }
+      ul { margin: 12px 0 4px; padding: 0 0 0 20px; color: #8b949e; font-size: 13px; line-height: 1.7; }
+      .footer { margin-top: 18px; font-size: 11px; color: #6e7681; }
+    </style>
+  </head>
+  <body>
+    <main class="card">
+      <p class="eyebrow">// headless</p>
+      <h1>sn-sql-api · API-only mode</h1>
+      <p>
+        The web SQL console is disabled because <code>API_ONLY=true</code> is
+        set. The REST API is fully functional and ready for callers.
+      </p>
+      <ul>
+        <li><a href="/docs">/docs</a> &mdash; Swagger UI</li>
+        <li><a href="/health">/health</a> &mdash; lightweight liveness</li>
+        <li><code>POST /health/check</code> &mdash; JDBC handshake</li>
+        <li><code>POST /query</code> &mdash; run SQL</li>
+        <li><code>POST /schema/tables</code> &middot; <code>POST /schema/columns</code></li>
+        <li><a href="/about">/about</a> &mdash; credits &amp; license</li>
+      </ul>
+      <p>
+        To re-enable the console, remove or set <code>API_ONLY=false</code> in
+        your <code>.env</code> and restart the container.
+      </p>
+      <p class="footer">
+        Made by
+        <a href="https://www.linkedin.com/in/rafaelmessias/"
+           target="_blank" rel="noopener noreferrer">Rafael Messias</a>
+        &mdash; MIT licensed. See <a href="/about">/about</a>.
+      </p>
+    </main>
+  </body>
+</html>
+"""
+
+
+if settings.api_only:
+
+    @app.get("/", include_in_schema=False, response_class=HTMLResponse)
+    def api_only_root() -> str:
+        return _API_ONLY_HTML
+
+elif DIST_INDEX.exists():
     app.mount(
         "/",
         StaticFiles(directory=str(DIST_DIR), html=True),

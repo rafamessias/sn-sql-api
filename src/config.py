@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     sn_jdbc_url: str | None = Field(default=None, alias="SN_JDBC_URL")
 
     api_key: SecretStr | None = Field(default=None, alias="API_KEY")
+    # When true, do not serve the bundled web UI at "/". All REST endpoints
+    # keep working — useful for production / headless deployments behind a
+    # gateway where only the API surface should be exposed.
+    api_only: bool = Field(default=False, alias="API_ONLY")
 
     @property
     def normalized_instance(self) -> str:

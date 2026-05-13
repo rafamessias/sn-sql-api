@@ -4,7 +4,10 @@ import { EditorTabsBar } from "./editor-tabs-bar";
 import { ResultsTable } from "./results-table";
 import { StatusBar } from "./status-bar";
 import { runQuery, type QueryResult } from "../lib/api";
-import { resultToCsv } from "../lib/csv";
+import {
+  downloadTextFile,
+  sanitizeDownloadStem,
+} from "../lib/download-text-file";
 import { formatDurationMs, formatRunningClock } from "../lib/format-duration-ms";
 import type { ConnectionPayload } from "../lib/connections";
 import type { EditorTab } from "../lib/editor-tabs";
@@ -13,7 +16,7 @@ type Status =
   | { kind: "idle"; message: string }
   | { kind: "running"; message: string }
   | { kind: "ok"; message: string }
-  | { kind: "error"; message: string };
+  | { kind: "error"; message: string; copyText?: string };
 
 const INITIAL_STATUS: Status = { kind: "idle", message: "Ready." };
 
@@ -149,6 +152,7 @@ export const EditorPanel = ({
       setTabStatus({
         kind: "error",
         message: `Error in ${formatDurationMs(elapsed)} — ${message}`,
+        copyText: message,
       });
     } finally {
       clearRunningTimer();
@@ -183,19 +187,52 @@ export const EditorPanel = ({
     setActiveStatus,
   ]);
 
-  const handleCopyCsv = useCallback(async () => {
-    if (!result) return;
+  const handleCopySql = useCallback(async () => {
+    const text = activeTab.query;
+    if (text.trim().length === 0) return;
     try {
-      await navigator.clipboard.writeText(resultToCsv(result));
+      await navigator.clipboard.writeText(text);
       setActiveStatus({
         kind: "ok",
-        message: `Copied ${result.row_count.toLocaleString()} row(s) as CSV.`,
+        message: `Copied query to clipboard (${text.length.toLocaleString()} chars).`,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setActiveStatus({ kind: "error", message: `Copy failed: ${message}` });
     }
-  }, [result, setActiveStatus]);
+  }, [activeTab.query, setActiveStatus]);
+
+  const handleDownloadSql = useCallback(() => {
+    const text = activeTab.query;
+    if (text.trim().length === 0) return;
+    const stem = sanitizeDownloadStem(activeTab.name);
+    try {
+      downloadTextFile(`${stem}.sql`, text, "application/sql;charset=utf-8");
+      setActiveStatus({
+        kind: "ok",
+        message: `Downloaded ${stem}.sql.`,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setActiveStatus({ kind: "error", message: `Download failed: ${message}` });
+    }
+  }, [activeTab.name, activeTab.query, setActiveStatus]);
+
+  const handleDownloadTxt = useCallback(() => {
+    const text = activeTab.query;
+    if (text.trim().length === 0) return;
+    const stem = sanitizeDownloadStem(activeTab.name);
+    try {
+      downloadTextFile(`${stem}.txt`, text);
+      setActiveStatus({
+        kind: "ok",
+        message: `Downloaded ${stem}.txt.`,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setActiveStatus({ kind: "error", message: `Download failed: ${message}` });
+    }
+  }, [activeTab.name, activeTab.query, setActiveStatus]);
 
   // When a tab is closed, drop its runtime state to free memory.
   const handleCloseTab = useCallback(
@@ -237,14 +274,23 @@ export const EditorPanel = ({
         query={activeTab.query}
         onQueryChange={onActiveQueryChange}
         isRunning={status.kind === "running"}
-        canExport={result !== null && result.row_count > 0}
         onRun={handleRun}
         onClear={handleClear}
-        onCopyCsv={handleCopyCsv}
+        onCopySql={handleCopySql}
+        onDownloadSql={handleDownloadSql}
+        onDownloadTxt={handleDownloadTxt}
         schemaTables={schemaTables}
       />
 
-      <StatusBar kind={status.kind} message={status.message} />
+      <StatusBar
+        kind={status.kind}
+        message={status.message}
+        errorCopyText={
+          status.kind === "error"
+            ? (status.copyText ?? status.message)
+            : undefined
+        }
+      />
 
       {result ? (
         <ResultsTable result={result} />

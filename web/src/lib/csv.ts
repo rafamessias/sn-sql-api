@@ -1,4 +1,4 @@
-import type { CellValue, QueryResult } from "./api";
+import type { CellValue } from "./api";
 
 const escapeCell = (value: CellValue): string => {
   if (value === null || value === undefined) return "";
@@ -15,6 +15,3 @@ export const tabularToCsv = (
   const lines = rows.map((row) => row.map(escapeCell).join(","));
   return [header, ...lines].join("\n");
 };
-
-export const resultToCsv = (result: QueryResult): string =>
-  tabularToCsv(result.columns, result.rows);

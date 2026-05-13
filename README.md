@@ -48,6 +48,7 @@ Edit `.env`. The checked-in [`.env.example`](./.env.example) targets the **nativ
 - `SN_JDBC_DRIVER_CLASS` — must match the driver class for your JAR (Simba vs native). Defaults to `com.simba.servicenow.jdbc.Driver`; use `com.snc.db.jdbc.JDBCDriver` for the instance download JAR when that is what you ship.
 - `SN_JDBC_URL` — full JDBC URL override; normalized for native `jdbc:servicenow://…` URLs as described above.
 - `API_KEY` — if set, protected routes require the `x-api-key` header (see §5 and §7).
+- `API_ONLY` — when `true` (`1`, `yes`, `on` also accepted), the container runs **headless**: it does **not** serve the bundled web UI at `/`. All REST endpoints stay fully functional. Defaults to `false`. See §4.1 for details.
 
 ## 3) Add JDBC driver
 
@@ -103,6 +104,30 @@ You should see `status`, `instance`, and `jdbc_driver_class`. Open **`http://loc
 - Background: `docker compose down`.
 
 **Rebuild** when you change `Dockerfile`, `requirements.txt`, or the `web/` app and need a fresh image: `docker compose build --no-cache` then `docker compose up`.
+
+### 4.1) API-only (headless) production mode
+
+For production-style deployments where you only want to expose the REST surface — for example behind an API gateway, in a service-to-service context, or when the web console must stay off — set:
+
+```bash
+# .env
+API_ONLY=true
+```
+
+Then `docker compose up` as usual. The same image runs in two modes; no rebuild is needed when you flip the flag.
+
+| Path               | `API_ONLY=false` (default) | `API_ONLY=true` |
+| ------------------ | -------------------------- | --------------- |
+| `GET /`            | Web SQL console (Preact)   | Minimal "API-only" landing page that links to `/docs` |
+| `GET /docs`        | Swagger UI                 | Swagger UI |
+| `GET /health`      | JSON                       | JSON |
+| `POST /query`, `POST /schema/*`, `POST /health/check`, `GET /about`, `GET /egress-ip`, `GET /debug/jdbc-auth` | Available | Available |
+
+Notes:
+
+- `API_ONLY` is independent of `API_KEY`. Combine them to require `x-api-key` **and** disable the UI for a production deployment: `API_KEY=…` + `API_ONLY=true`.
+- Dev mode (§6) is unaffected — the `web-dev` service still runs Vite on `http://localhost:5173/` and proxies REST calls to the API container.
+- The image still builds the UI bundle during `docker build`; only the runtime decides whether to serve it. This keeps a single, immutable image that you can promote across environments.
 
 ## 5) Web SQL console
 
@@ -249,6 +274,7 @@ Interactive API docs (Swagger UI): `http://localhost:8000/docs`.
 | POST   | `/schema/tables`   | `x-api-key`               | List tables via JDBC metadata. Body: `{ pattern?, connection? }` |
 | POST   | `/schema/columns`  | `x-api-key`               | List columns of a table. Body: `{ table, connection? }` |
 | GET    | `/debug/jdbc-auth` | `x-api-key`               | Masked diagnostics about the configured connection |
+| GET    | `/about`           | none                      | Author and MIT license credits (also reachable from the UI via the Konami code or 5 clicks on the ⌘ logo) |
 
 The optional `connection` body field on `/query`, `/schema/tables`, `/schema/columns`, and `/health/check` accepts:
 

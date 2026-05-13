@@ -10,6 +10,7 @@ import {
   keymap,
   lineNumbers,
   placeholder,
+  type Panel,
 } from "@codemirror/view";
 import {
   defaultKeymap,
@@ -32,6 +33,16 @@ import {
 } from "@codemirror/autocomplete";
 import { sql, StandardSQL, type SQLNamespace } from "@codemirror/lang-sql";
 import { tags } from "@lezer/highlight";
+import { search, searchKeymap } from "@codemirror/search";
+
+/** CodeMirror only paints search highlights while a search panel is registered; host is visually hidden. */
+function invisibleSearchPanelHost(_view: EditorView): Panel {
+  const dom = document.createElement("div");
+  dom.setAttribute("aria-hidden", "true");
+  dom.style.cssText =
+    "height:0;overflow:hidden;position:absolute;width:1px;clip:rect(0,0,0,0);pointer-events:none;";
+  return { dom, top: false };
+}
 
 const PLACEHOLDER =
   "SELECT number, short_description, sys_created_on FROM incident LIMIT 100";
@@ -135,6 +146,13 @@ const editorTheme = EditorView.theme(
       backgroundColor: "rgba(63, 185, 80, 0.15)",
       color: "#3fb950",
     },
+    ".cm-searchMatch": {
+      backgroundColor: "rgba(255, 193, 7, 0.22)",
+    },
+    ".cm-searchMatch-selected": {
+      backgroundColor: "rgba(63, 185, 80, 0.38)",
+      outline: "1px solid rgba(63, 185, 80, 0.6)",
+    },
   },
   { dark: true },
 );
@@ -182,6 +200,7 @@ function baseExtensions(
     sqlCompartment.of(sqlSupport(schemaTables)),
     syntaxHighlighting(sqlHighlightStyle, { fallback: true }),
     placeholder(PLACEHOLDER),
+    search({ literal: true, createPanel: invisibleSearchPanelHost }),
     keymap.of([
       {
         key: "Mod-Enter",
@@ -195,6 +214,7 @@ function baseExtensions(
       ...defaultKeymap,
       ...historyKeymap,
       ...completionKeymap,
+      ...searchKeymap,
     ]),
   ];
 }
@@ -205,6 +225,12 @@ export type SqlCodeEditorProps = {
   onRun: () => void;
   /** Table names from schema discovery — improves FROM / JOIN autocomplete */
   schemaTables?: readonly string[];
+  /** Filled when the CodeMirror instance is mounted (cleared on unmount). */
+  editorViewRef?: { current: EditorView | null };
+  /** Called after doc/selection/viewport updates (for search UI sync). */
+  onViewUpdate?: () => void;
+  /** Called once after the CodeMirror view is created. */
+  onEditorMount?: () => void;
 };
 
 export const SqlCodeEditor = ({
@@ -212,6 +238,9 @@ export const SqlCodeEditor = ({
   onChange,
   onRun,
   schemaTables,
+  editorViewRef,
+  onViewUpdate,
+  onEditorMount,
 }: SqlCodeEditorProps) => {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -220,8 +249,12 @@ export const SqlCodeEditor = ({
 
   const onChangeRef = useRef(onChange);
   const onRunRef = useRef(onRun);
+  const onViewUpdateRef = useRef(onViewUpdate);
+  const onEditorMountRef = useRef(onEditorMount);
   onChangeRef.current = onChange;
   onRunRef.current = onRun;
+  onViewUpdateRef.current = onViewUpdate;
+  onEditorMountRef.current = onEditorMount;
 
   useEffect(() => {
     const host = hostRef.current;
@@ -236,16 +269,29 @@ export const SqlCodeEditor = ({
           if (update.docChanged) {
             onChangeRef.current(update.state.doc.toString());
           }
+          if (
+            update.docChanged ||
+            update.selectionSet ||
+            update.viewportChanged
+          ) {
+            onViewUpdateRef.current?.();
+          }
         }),
       ],
     });
 
     const view = new EditorView({ state, parent: host });
     viewRef.current = view;
+    if (editorViewRef) editorViewRef.current = view;
+    queueMicrotask(() => {
+      onEditorMountRef.current?.();
+      onViewUpdateRef.current?.();
+    });
 
     return () => {
       view.destroy();
       viewRef.current = null;
+      if (editorViewRef) editorViewRef.current = null;
     };
   }, []);
 

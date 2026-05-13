@@ -1,6 +1,6 @@
 import { cn } from "../lib/cn";
 
-export type TabId = "editor" | "schema" | "connections";
+export type TabId = "editor" | "schema" | "connections" | "logs";
 
 type TabSpec = {
   id: TabId;

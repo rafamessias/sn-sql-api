@@ -18,8 +18,12 @@ export default defineConfig({
       : undefined,
     proxy: {
       "/query": { target: BACKEND, changeOrigin: true },
-      "/schema": { target: BACKEND, changeOrigin: true },
+      // Do not proxy `/schema` alone — that path is the SPA Schema tab. Only proxy API routes.
+      "/schema/tables": { target: BACKEND, changeOrigin: true },
+      "/schema/columns": { target: BACKEND, changeOrigin: true },
       "/health": { target: BACKEND, changeOrigin: true },
+      "/egress-ip": { target: BACKEND, changeOrigin: true },
+      "/about": { target: BACKEND, changeOrigin: true },
       "/debug": { target: BACKEND, changeOrigin: true },
     },
   },

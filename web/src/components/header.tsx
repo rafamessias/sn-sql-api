@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "preact/hooks";
+import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { JSX } from "preact";
 import { checkConnection } from "../lib/api";
 import { cn } from "../lib/cn";
+import { EASTER_EGG_EVENT } from "./easter-egg";
 import {
   SERVER_DEFAULT_ID,
   connectionInstanceLabel,
@@ -22,6 +23,8 @@ type HeaderProps = {
 };
 
 const REFRESH_INTERVAL_MS = 30_000;
+const EASTER_EGG_CLICK_TARGET = 5;
+const EASTER_EGG_CLICK_WINDOW_MS = 2_500;
 
 export const Header = ({
   connections,
@@ -103,6 +106,22 @@ export const Header = ({
     onActiveIdChange((event.target as HTMLSelectElement).value);
   };
 
+  const easterEggClicksRef = useRef<number[]>([]);
+
+  const handleLogoClick = useCallback(() => {
+    const now = Date.now();
+    const recent = easterEggClicksRef.current.filter(
+      (timestamp) => now - timestamp < EASTER_EGG_CLICK_WINDOW_MS,
+    );
+    recent.push(now);
+    easterEggClicksRef.current = recent;
+
+    if (recent.length >= EASTER_EGG_CLICK_TARGET) {
+      easterEggClicksRef.current = [];
+      window.dispatchEvent(new CustomEvent(EASTER_EGG_EVENT));
+    }
+  }, []);
+
   const badgeClass = cn("badge", {
     "badge-ok": status.kind === "ok",
     "badge-err": status.kind === "error",
@@ -128,9 +147,15 @@ export const Header = ({
     <header class="sticky top-0 z-20 border-b border-border bg-bg">
       <div class="mx-auto flex w-full max-w-[1400px] flex-wrap items-center gap-4 px-6 py-3">
         <div class="flex items-center gap-3">
-          <div class="grid h-8 w-8 place-items-center rounded-md border border-accent bg-accent-dim text-sm">
+          <button
+            type="button"
+            onClick={handleLogoClick}
+            aria-label="sn-sql-api logo"
+            title="sn-sql-api"
+            class="grid h-8 w-8 place-items-center rounded-md border border-accent bg-accent-dim text-sm text-text transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
             <span aria-hidden="true">⌘</span>
-          </div>
+          </button>
           <div class="flex flex-col leading-tight">
             <span class="font-mono text-xs text-accent">sn-sql-api</span>
             <span class="text-[11px] text-muted">ServiceNow SQL API Console</span>
