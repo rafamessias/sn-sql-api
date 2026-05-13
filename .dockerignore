@@ -1,0 +1,18 @@
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.mypy_cache
+
+# Web build artifacts and dependencies (rebuilt inside the image)
+web/node_modules
+web/dist
+
+# Local-only files
+.env
+.env.local
+*.log
+.DS_Store
+.git
+.gitignore
+.idea
+.vscode

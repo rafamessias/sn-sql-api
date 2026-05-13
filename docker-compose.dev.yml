@@ -1,0 +1,44 @@
+services:
+  sn-sql-api:
+    volumes:
+      - ./src:/app/src
+      - ./drivers:/app/drivers:ro
+    environment:
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONUNBUFFERED=1
+    command:
+      [
+        "uvicorn",
+        "src.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--reload",
+        "--reload-dir",
+        "/app/src",
+      ]
+
+  web-dev:
+    image: node:20-alpine
+    container_name: sn-sql-api-web
+    working_dir: /web
+    volumes:
+      - ./web:/web
+      - web_node_modules:/web/node_modules
+    ports:
+      - "5173:5173"
+    environment:
+      # Inside the compose network the backend is reachable by service name.
+      - VITE_BACKEND_URL=http://sn-sql-api:8000
+      # Bind-mounted FS in WSL2/Docker needs polling for chokidar/Vite watcher.
+      - CHOKIDAR_USEPOLLING=true
+      - VITE_USE_POLLING=true
+    command: >
+      sh -c "npm install --no-audit --no-fund --loglevel=error &&
+             npm run dev -- --host 0.0.0.0 --port 5173"
+    depends_on:
+      - sn-sql-api
+
+volumes:
+  web_node_modules:

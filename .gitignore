@@ -1,0 +1,24 @@
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+
+# Local env / secrets
+.env
+.env.local
+
+# Web build artifacts and dependencies
+web/node_modules/
+web/dist/
+src/static/dist/
+
+# JDBC driver binaries (place locally; never commit vendor JARs)
+drivers/*.jar
+**/*Zone.Identifier
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+*.log

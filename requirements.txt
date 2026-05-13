@@ -1,0 +1,5 @@
+fastapi==0.115.12
+uvicorn[standard]==0.34.2
+jaydebeapi==1.2.3
+JPype1==1.5.0
+pydantic-settings==2.8.1

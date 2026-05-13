@@ -1,0 +1,277 @@
+import { useEffect, useRef } from "preact/hooks";
+import { Compartment, EditorState, type Extension } from "@codemirror/state";
+import {
+  EditorView,
+  drawSelection,
+  dropCursor,
+  highlightActiveLine,
+  highlightActiveLineGutter,
+  highlightSpecialChars,
+  keymap,
+  lineNumbers,
+  placeholder,
+} from "@codemirror/view";
+import {
+  defaultKeymap,
+  history,
+  historyKeymap,
+  indentWithTab,
+} from "@codemirror/commands";
+import {
+  bracketMatching,
+  foldGutter,
+  indentOnInput,
+  syntaxHighlighting,
+  HighlightStyle,
+} from "@codemirror/language";
+import {
+  autocompletion,
+  closeBrackets,
+  closeBracketsKeymap,
+  completionKeymap,
+} from "@codemirror/autocomplete";
+import { sql, StandardSQL, type SQLNamespace } from "@codemirror/lang-sql";
+import { tags } from "@lezer/highlight";
+
+const PLACEHOLDER =
+  "SELECT number, short_description, sys_created_on FROM incident LIMIT 100";
+
+const sqlHighlightStyle = HighlightStyle.define([
+  { tag: tags.keyword, color: "#ff7b72", fontWeight: "500" },
+  { tag: tags.operator, color: "#79c0ff" },
+  { tag: tags.bracket, color: "#8b949e" },
+  { tag: tags.name, color: "#e6edf3" },
+  { tag: tags.variableName, color: "#ffa657" },
+  { tag: tags.propertyName, color: "#79c0ff" },
+  { tag: tags.literal, color: "#a5d6ff" },
+  { tag: tags.string, color: "#a5d6ff" },
+  { tag: tags.number, color: "#d2a8ff" },
+  { tag: tags.bool, color: "#d2a8ff" },
+  { tag: tags.null, color: "#8b949e", fontStyle: "italic" },
+  { tag: tags.comment, color: "#8b949e", fontStyle: "italic" },
+  { tag: tags.meta, color: "#8b949e" },
+  { tag: tags.typeName, color: "#ffa657" },
+  { tag: tags.className, color: "#ffa657" },
+]);
+
+const editorTheme = EditorView.theme(
+  {
+    "&": {
+      backgroundColor: "#010409",
+      color: "#e6edf3",
+      fontSize: "13px",
+      minWidth: 0,
+      width: "100%",
+      maxWidth: "100%",
+      fontFamily:
+        "ui-monospace, SFMono-Regular, Menlo, Consolas, 'IBM Plex Mono', monospace",
+    },
+    ".cm-content": {
+      caretColor: "#3fb950",
+      padding: "16px 20px",
+      minHeight: "180px",
+    },
+    ".cm-scroller": {
+      minWidth: 0,
+      width: "100%",
+      maxWidth: "100%",
+      overflowX: "scroll",
+      overflowY: "auto",
+      fontFamily: "inherit",
+      scrollbarGutter: "stable",
+      scrollbarWidth: "auto",
+      scrollbarColor: "#7d8590 #21262d",
+    },
+    ".cm-scroller::-webkit-scrollbar": {
+      width: "14px",
+      height: "14px",
+    },
+    ".cm-scroller::-webkit-scrollbar-track": {
+      backgroundColor: "#161b22",
+      borderTop: "1px solid #30363d",
+    },
+    ".cm-scroller::-webkit-scrollbar-thumb": {
+      backgroundColor: "#6e7681",
+      borderRadius: "8px",
+      border: "3px solid #161b22",
+      backgroundClip: "padding-box",
+    },
+    ".cm-scroller::-webkit-scrollbar-thumb:hover": {
+      backgroundColor: "#8b949e",
+    },
+    ".cm-scroller::-webkit-scrollbar-corner": {
+      backgroundColor: "#161b22",
+    },
+    ".cm-gutters": {
+      backgroundColor: "#010409",
+      color: "#6e7681",
+      border: "none",
+      borderRight: "1px solid #30363d",
+    },
+    ".cm-activeLineGutter": {
+      backgroundColor: "#161b22",
+    },
+    ".cm-activeLine": {
+      backgroundColor: "rgba(63, 185, 80, 0.06)",
+    },
+    ".cm-lineNumbers .cm-gutterElement": { padding: "0 8px 0 12px" },
+    ".cm-foldGutter .cm-gutterElement": { padding: "0 4px" },
+    ".cm-cursor, .cm-dropCursor": {
+      borderLeftColor: "#3fb950",
+    },
+    ".cm-selectionBackground, ::selection": {
+      backgroundColor: "rgba(63, 185, 80, 0.2) !important",
+    },
+    "&.cm-focused .cm-selectionBackground, &.cm-focused ::selection": {
+      backgroundColor: "rgba(63, 185, 80, 0.25) !important",
+    },
+    ".cm-tooltip": {
+      backgroundColor: "#161b22",
+      border: "1px solid #30363d",
+      borderRadius: "6px",
+      color: "#e6edf3",
+    },
+    ".cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected]": {
+      backgroundColor: "rgba(63, 185, 80, 0.15)",
+      color: "#3fb950",
+    },
+  },
+  { dark: true },
+);
+
+function buildSchema(
+  tables: readonly string[] | undefined,
+): SQLNamespace | undefined {
+  if (!tables?.length) return undefined;
+  return Object.fromEntries(
+    tables.map((name) => [name, [] as readonly string[]]),
+  ) as SQLNamespace;
+}
+
+function sqlSupport(schemaTables: readonly string[] | undefined) {
+  return sql({
+    dialect: StandardSQL,
+    upperCaseKeywords: true,
+    schema: buildSchema(schemaTables),
+  });
+}
+
+function baseExtensions(
+  sqlCompartment: Compartment,
+  schemaTables: readonly string[] | undefined,
+  onRun: () => void,
+): Extension[] {
+  return [
+    editorTheme,
+    lineNumbers(),
+    highlightActiveLineGutter(),
+    highlightActiveLine(),
+    highlightSpecialChars(),
+    history(),
+    foldGutter(),
+    drawSelection(),
+    dropCursor(),
+    EditorState.allowMultipleSelections.of(true),
+    indentOnInput(),
+    bracketMatching(),
+    closeBrackets(),
+    autocompletion({
+      activateOnTyping: true,
+      maxRenderedOptions: 50,
+    }),
+    sqlCompartment.of(sqlSupport(schemaTables)),
+    syntaxHighlighting(sqlHighlightStyle, { fallback: true }),
+    placeholder(PLACEHOLDER),
+    keymap.of([
+      {
+        key: "Mod-Enter",
+        run: () => {
+          onRun();
+          return true;
+        },
+      },
+      indentWithTab,
+      ...closeBracketsKeymap,
+      ...defaultKeymap,
+      ...historyKeymap,
+      ...completionKeymap,
+    ]),
+  ];
+}
+
+export type SqlCodeEditorProps = {
+  value: string;
+  onChange: (next: string) => void;
+  onRun: () => void;
+  /** Table names from schema discovery — improves FROM / JOIN autocomplete */
+  schemaTables?: readonly string[];
+};
+
+export const SqlCodeEditor = ({
+  value,
+  onChange,
+  onRun,
+  schemaTables,
+}: SqlCodeEditorProps) => {
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  const viewRef = useRef<EditorView | null>(null);
+  const sqlCompartmentRef = useRef<Compartment | null>(null);
+  if (!sqlCompartmentRef.current) sqlCompartmentRef.current = new Compartment();
+
+  const onChangeRef = useRef(onChange);
+  const onRunRef = useRef(onRun);
+  onChangeRef.current = onChange;
+  onRunRef.current = onRun;
+
+  useEffect(() => {
+    const host = hostRef.current;
+    const sqlCompartment = sqlCompartmentRef.current;
+    if (!host || !sqlCompartment) return;
+
+    const state = EditorState.create({
+      doc: value,
+      extensions: [
+        ...baseExtensions(sqlCompartment, schemaTables, () => onRunRef.current()),
+        EditorView.updateListener.of((update) => {
+          if (update.docChanged) {
+            onChangeRef.current(update.state.doc.toString());
+          }
+        }),
+      ],
+    });
+
+    const view = new EditorView({ state, parent: host });
+    viewRef.current = view;
+
+    return () => {
+      view.destroy();
+      viewRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    const current = view.state.doc.toString();
+    if (current === value) return;
+    view.dispatch({
+      changes: { from: 0, to: current.length, insert: value },
+    });
+  }, [value]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    const sqlCompartment = sqlCompartmentRef.current;
+    if (!view || !sqlCompartment) return;
+    view.dispatch({
+      effects: sqlCompartment.reconfigure(sqlSupport(schemaTables)),
+    });
+  }, [schemaTables]);
+
+  return (
+    <div
+      ref={hostRef}
+      class="sql-cm-host contain-inline-size min-h-[180px] min-w-0 w-full max-w-full [&_.cm-editor]:outline-none [&_.cm-editor]:min-h-[180px]"
+    />
+  );
+};

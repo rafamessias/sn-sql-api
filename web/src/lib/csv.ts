@@ -1,0 +1,14 @@
+import type { CellValue, QueryResult } from "./api";
+
+const escapeCell = (value: CellValue): string => {
+  if (value === null || value === undefined) return "";
+  const raw =
+    typeof value === "object" ? JSON.stringify(value) : String(value);
+  return /[",\n\r]/.test(raw) ? `"${raw.replace(/"/g, '""')}"` : raw;
+};
+
+export const resultToCsv = (result: QueryResult): string => {
+  const header = result.columns.map(escapeCell).join(",");
+  const lines = result.rows.map((row) => row.map(escapeCell).join(","));
+  return [header, ...lines].join("\n");
+};

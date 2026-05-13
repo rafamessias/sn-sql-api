@@ -1,0 +1,88 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #app {
+    @apply h-full;
+  }
+
+  body {
+    @apply min-h-screen;
+  }
+
+  * {
+    scrollbar-width: auto;
+    scrollbar-color: theme("colors.subtle") theme("colors.surface");
+  }
+
+  ::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: theme("colors.surface");
+    border: 1px solid theme("colors.border");
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: theme("colors.subtle");
+    border: 3px solid theme("colors.surface");
+    border-radius: 8px;
+    background-clip: padding-box;
+    min-height: 32px;
+    min-width: 32px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: theme("colors.muted");
+    background-clip: padding-box;
+  }
+
+  ::-webkit-scrollbar-thumb:active {
+    background: theme("colors.text");
+    background-clip: padding-box;
+  }
+
+  ::-webkit-scrollbar-corner {
+    background: theme("colors.surface");
+  }
+
+  textarea,
+  input {
+    color-scheme: dark;
+  }
+
+  textarea::selection {
+    background: theme("colors.accent.dim");
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center gap-1.5 rounded-md border border-border bg-surface px-3 py-1.5 font-mono text-xs text-muted transition-colors hover:border-accent hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .btn-primary {
+    @apply border-accent bg-accent text-bg hover:bg-[#56d364] hover:text-bg disabled:opacity-60;
+  }
+
+  .input {
+    @apply w-full rounded-md border border-border bg-bg px-3 py-1.5 font-mono text-xs text-text placeholder:text-subtle focus:border-accent focus:shadow-focus focus:outline-none;
+  }
+
+  .badge {
+    @apply inline-flex items-center gap-1.5 rounded border border-border bg-surface-2 px-2 py-0.5 font-mono text-[11px] text-muted;
+  }
+
+  .badge-ok {
+    @apply border-accent text-accent;
+  }
+
+  .badge-err {
+    @apply border-danger text-danger;
+  }
+}

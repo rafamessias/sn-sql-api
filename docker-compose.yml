@@ -1,0 +1,13 @@
+services:
+  sn-sql-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sn-sql-api
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./drivers:/app/drivers:ro
+    restart: unless-stopped
