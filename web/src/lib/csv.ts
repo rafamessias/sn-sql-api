@@ -7,8 +7,14 @@ const escapeCell = (value: CellValue): string => {
   return /[",\n\r]/.test(raw) ? `"${raw.replace(/"/g, '""')}"` : raw;
 };
 
-export const resultToCsv = (result: QueryResult): string => {
-  const header = result.columns.map(escapeCell).join(",");
-  const lines = result.rows.map((row) => row.map(escapeCell).join(","));
+export const tabularToCsv = (
+  columns: readonly string[],
+  rows: readonly (readonly CellValue[])[],
+): string => {
+  const header = columns.map(escapeCell).join(",");
+  const lines = rows.map((row) => row.map(escapeCell).join(","));
   return [header, ...lines].join("\n");
 };
+
+export const resultToCsv = (result: QueryResult): string =>
+  tabularToCsv(result.columns, result.rows);

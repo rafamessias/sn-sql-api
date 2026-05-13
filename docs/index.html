@@ -244,6 +244,9 @@ strong{color:var(--tx);font-weight:500}
   .main{padding:20px 16px}
   .header-title{display:none}
 }
+.repo-banner{font-family:var(--sans);font-size:12px;padding:10px 24px;background:var(--sf);border-bottom:1px solid var(--bd);color:var(--tm);line-height:1.5}
+.repo-banner a{color:var(--blue);font-weight:500;text-decoration:none}
+.repo-banner a:hover{text-decoration:underline}
 </style>
 </head>
 <body>
@@ -252,11 +255,11 @@ strong{color:var(--tx);font-weight:500}
   <button class="mob-menu-btn" id="mobMenuBtn" onclick="openDrawer()" aria-label="Menu">☰</button>
   <div class="logo">
     <div class="logo-box">⚙</div>
-    <span>sn-jdbc-setup</span>
+    <span>sn-sql-api</span>
   </div>
   <span class="header-sep">/</span>
   <span class="header-title" id="headerTitle">ServiceNow JDBC · Python Container · Step-by-step guide</span>
-  <span class="badge">Australia release</span>
+  <span class="badge" id="repoGuideBadge">JDBC wiring guide</span>
   <div class="lang-toggle">
     <button class="lang-btn active" id="btnEN" onclick="setLang('en')"><span class="flag">🇺🇸</span> EN</button>
     <div class="lang-sep"></div>
@@ -268,6 +271,7 @@ strong{color:var(--tx);font-weight:500}
     <span id="persistLabel">saved</span>
   </div>
 </div>
+<div class="repo-banner" id="repoBanner"></div>
 <div class="toast" id="toast"></div>
 
 <!-- Keyboard shortcuts modal -->
@@ -361,6 +365,8 @@ const TRANSLATIONS = {
     zipPanelTitle: 'Download project',
     zipDlLabel: 'project.zip',
     zipToast: '✓ project.zip downloaded',
+    repoBanner: '<a href="https://github.com/rafamessias/sn-sql-api" target="_blank" rel="noopener noreferrer">rafamessias/sn-sql-api</a> · FastAPI SQL API, Docker Compose, and browser SQL console. This wizard walks through JDBC driver wiring.',
+    repoGuideBadge: 'JDBC wiring guide',
     persistLabel: 'saved',
     trefSearchPlaceholder: 'Search tables or columns…',
     kbdModalTitle: 'Keyboard shortcuts',
@@ -396,7 +402,7 @@ const TRANSLATIONS = {
     queryRunner: {
       stepNum: 'Step 09',
       title: 'Query runner',
-      desc: 'Write a SELECT, pick an output format, and copy the ready-to-run command. The generated code uses the connection.py helper from Step 05.',
+      desc: 'The maintained project with REST API, web UI, and Compose files is <strong>rafamessias/sn-sql-api</strong> on GitHub. The generators below still show small <strong>JayDeBeApi</strong> examples for learning how JDBC connects from Python.',
       tplLabel: 'Templates',
       fmtLabel: 'Output as',
       fmtScript: 'query.py script',
@@ -616,6 +622,8 @@ Then update <ic>DRIVER_CLASS</ic> in <ic>connection.py</ic> to match.`
     zipPanelTitle: 'Baixar projeto',
     zipDlLabel: 'projeto.zip',
     zipToast: '✓ projeto.zip baixado',
+    repoBanner: '<a href="https://github.com/rafamessias/sn-sql-api" target="_blank" rel="noopener noreferrer">rafamessias/sn-sql-api</a> · API FastAPI SQL, Docker Compose e console SQL no navegador. Este assistente cobre a configuração do driver JDBC.',
+    repoGuideBadge: 'Guia JDBC',
     persistLabel: 'salvo',
     trefSearchPlaceholder: 'Buscar tabelas ou colunas…',
     kbdModalTitle: 'Atalhos de teclado',
@@ -651,7 +659,7 @@ Then update <ic>DRIVER_CLASS</ic> in <ic>connection.py</ic> to match.`
     queryRunner: {
       stepNum: 'Etapa 09',
       title: 'Query runner',
-      desc: 'Escreva um SELECT, escolha o formato de saída e copie o comando pronto para executar. O código gerado usa o helper connection.py da Etapa 05.',
+      desc: 'O projeto mantido com API REST, interface web e arquivos Compose é o <strong>rafamessias/sn-sql-api</strong> no GitHub. Os geradores abaixo ainda mostram exemplos pequenos com <strong>JayDeBeApi</strong> para aprender como o JDBC se conecta a partir do Python.',
       tplLabel: 'Templates',
       fmtLabel: 'Gerar como',
       fmtScript: 'script query.py',
@@ -875,6 +883,10 @@ function setLang(l) {
   document.getElementById('zipPanelTitle').textContent  = T().zipPanelTitle;
   document.getElementById('zipDlLabel').textContent     = T().zipDlLabel;
   document.getElementById('persistLabel').textContent   = T().persistLabel;
+  const rgb = document.getElementById('repoGuideBadge');
+  if (rgb) rgb.textContent = T().repoGuideBadge;
+  const rb = document.getElementById('repoBanner');
+  if (rb) rb.innerHTML = T().repoBanner;
   const kmt = document.getElementById('kbdModalTitle');
   if (kmt) kmt.textContent = T().kbdModalTitle;
   updateEnvPreview();
@@ -1425,8 +1437,14 @@ const CONTENT = [buildPrereqs, buildStructure, buildDockerfile, buildReqs, build
 
 // ── .env helpers ────────────────────────────────────────
 function envContent() {
-  const passVal = cfg.pass ? cfg.pass : T().envNoPass;
-  return `SN_USER=${cfg.user}\nSN_PASS=${passVal}\n`;
+  const passVal = cfg.pass ? cfg.pass : 'your_password_here';
+  return `# ServiceNow SQL API — https://github.com/rafamessias/sn-sql-api
+SN_INSTANCE=${cfg.instance}
+SN_USERNAME=${cfg.user}
+SN_PASSWORD=${passVal}
+SN_JDBC_DRIVER_CLASS=com.snc.db.jdbc.JDBCDriver
+SN_JDBC_JAR_PATH=${cfg.jar}
+`;
 }
 
 function updateEnvPreview() {
@@ -1435,18 +1453,28 @@ function updateEnvPreview() {
   const passVal = cfg.pass
     ? cfg.pass.replace(/./g, '•')
     : T().envNoPass;
-  el.innerHTML =
-    `<span style="color:var(--var)">SN_USER</span>=<span style="color:var(--str)">${escHtml(cfg.user)}</span>\n` +
-    `<span style="color:var(--var)">SN_PASS</span>=<span style="color:var(--str)">${escHtml(passVal)}</span>`;
-  // Also refresh env card in main if visible
+  const lines = [
+    ['SN_INSTANCE', cfg.instance],
+    ['SN_USERNAME', cfg.user],
+    ['SN_PASSWORD', passVal],
+    ['SN_JDBC_DRIVER_CLASS', 'com.snc.db.jdbc.JDBCDriver'],
+    ['SN_JDBC_JAR_PATH', cfg.jar],
+  ];
+  el.innerHTML = lines.map(([k, v]) =>
+    `<span style="color:var(--var)">${k}</span>=<span style="color:var(--str)">${escHtml(v)}</span>`
+  ).join('\n');
   const card = document.getElementById('envCardBody');
   if (card) {
     const passDisplay = cfg.pass
       ? `<span style="color:var(--str)">${escHtml(cfg.pass.replace(/./g, '•'))}</span>`
       : `<span style="color:var(--ts)">${escHtml(T().envNoPass)}</span>`;
-    card.innerHTML =
-      `<span style="color:var(--var)">SN_USER</span>=<span style="color:var(--str)">${escHtml(cfg.user)}</span>\n` +
-      `<span style="color:var(--var)">SN_PASS</span>=${passDisplay}`;
+    card.innerHTML = lines.slice(0, 3).map(([k, v], i) => {
+      const disp = i === 2 ? passDisplay : `<span style="color:var(--str)">${escHtml(v)}</span>`;
+      return `<span style="color:var(--var)">${k}</span>=${disp}`;
+    }).concat([
+      `<span style="color:var(--var)">SN_JDBC_DRIVER_CLASS</span>=<span style="color:var(--str)">com.snc.db.jdbc.JDBCDriver</span>`,
+      `<span style="color:var(--var)">SN_JDBC_JAR_PATH</span>=<span style="color:var(--str)">${escHtml(cfg.jar)}</span>`,
+    ]).join('\n');
   }
 }
 
@@ -1668,16 +1696,10 @@ function sqConfirm() {
   showToast(T().sqToastSaved);
 }
 function zipFileList() {
-  const hasCreds = cfg.user && cfg.pass;
   return [
-    { name: 'Dockerfile',      filled: true },
-    { name: 'requirements.txt',filled: true },
-    { name: 'connection.py',   filled: true },
-    { name: 'query.py',        filled: true },
-    { name: '.env.example',    filled: true },
-    { name: '.gitignore',      filled: true },
-    { name: 'run_local.py',    filled: true },
-    { name: '.env',            filled: hasCreds },
+    { name: 'GETTING-STARTED.txt', filled: true },
+    { name: '.env.example', filled: true },
+    { name: '.env', filled: true },
   ];
 }
 
@@ -1693,201 +1715,77 @@ async function downloadZip() {
   const btn = document.getElementById('zipDlBtn');
   if (btn) { btn.disabled = true; btn.innerHTML = '⏳ …'; }
 
-  const url  = `jdbc:servicenow://https://${cfg.instance}.service-now.com`;
-  const currentSql = (document.getElementById('qrSql')?.value?.trim()) ||
-    'SELECT number, short_description, state\nFROM incident\nLIMIT 20';
+  const gettingStartedEn = `ServiceNow SQL API — quick start
+================================
 
-  const dockerfile = `FROM python:3.11-slim
+Full source (FastAPI + web UI + Docker Compose):
+https://github.com/rafamessias/sn-sql-api
 
-# Install JDK 17 — required by JPype1 to start the JVM
-RUN apt-get update && apt-get install -y \\
-    openjdk-17-jdk \\
-    && rm -rf /var/lib/apt/lists/*
+1) Clone
+   git clone https://github.com/rafamessias/sn-sql-api.git
+   cd sn-sql-api
 
-# Set JAVA_HOME so JPype1 can find libjvm.so automatically
-ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
-ENV PATH="$JAVA_HOME/bin:$PATH"
+2) Copy this ZIP's .env and .env.example into the repo root (merge or replace).
 
-WORKDIR /app
+   SN_INSTANCE — short name (e.g. ${cfg.instance}) or full host; see README.
+   SN_USERNAME — JDBC user
+   SN_PASSWORD — JDBC password (never commit real secrets)
+   SN_JDBC_DRIVER_CLASS — must match your JAR (often com.snc.db.jdbc.JDBCDriver)
+   SN_JDBC_JAR_PATH — path inside the container (must match compose volume)
 
-# Copy the JDBC driver JAR before installing Python deps
-COPY drivers/servicenow-jdbc-driver.jar ${cfg.jar}
+3) Put your ServiceNow JDBC .jar under ./drivers/
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+4) Run
+   docker compose up --build
 
-COPY . .
+5) Open http://localhost:8000/ (SQL console) and http://localhost:8000/docs (Swagger).
+
+Wizard (this site): https://rafamessias.github.io/sn-sql-api/
 `;
 
-  const requirementsTxt = `JayDeBeApi==1.2.3
-JPype1==1.5.0
+  const gettingStartedPt = `ServiceNow SQL API — início rápido
+================================
+
+Código completo (FastAPI + UI web + Docker Compose):
+https://github.com/rafamessias/sn-sql-api
+
+1) Clone
+   git clone https://github.com/rafamessias/sn-sql-api.git
+   cd sn-sql-api
+
+2) Copie os arquivos .env e .env.example deste ZIP para a raiz do repositório.
+
+3) Coloque o JDBC .jar da ServiceNow em ./drivers/
+
+4) Execute
+   docker compose up --build
+
+5) Abra http://localhost:8000/ (console SQL) e http://localhost:8000/docs (Swagger).
+
+Assistente (este site): https://rafamessias.github.io/sn-sql-api/
 `;
 
-  const connectionPy = `import jaydebeapi
-import os
+  const gettingStarted = lang === 'pt' ? gettingStartedPt : gettingStartedEn;
 
-# ── Driver settings ──────────────────────────────────────
-DRIVER_CLASS = "com.servicenow.jdbc.Driver"   # verify: jar tf ${cfg.jar} | grep -i driver
-JDBC_URL     = "${url}"
-JAR_PATH     = "${cfg.jar}"
-
-# ── Credentials come from environment variables ──────────
-# Never hardcode passwords in source code.
-USERNAME = os.environ["SN_USER"]   # set with --env-file .env at docker run
-PASSWORD = os.environ["SN_PASS"]
-
-
-def get_connection():
-    """Open and return a JDBC connection to the ServiceNow SQL API."""
-    return jaydebeapi.connect(
-        DRIVER_CLASS,
-        JDBC_URL,
-        [USERNAME, PASSWORD],
-        JAR_PATH,
-    )
-
-
-def run_query(sql: str) -> list[dict]:
-    """Execute a SQL query and return rows as a list of dicts."""
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(sql)
-            cols = [d[0] for d in cur.description]
-            return [dict(zip(cols, row)) for row in cur.fetchall()]
+  const envExample = `# Copy to .env — see README.md in https://github.com/rafamessias/sn-sql-api
+SN_INSTANCE=${cfg.instance}
+SN_USERNAME=${cfg.user}
+SN_PASSWORD=your_password_here
+SN_JDBC_DRIVER_CLASS=com.snc.db.jdbc.JDBCDriver
+SN_JDBC_JAR_PATH=${cfg.jar}
 `;
 
-  const queryPy = `# query.py — run with: docker run --env-file .env sn-jdbc-app python query.py
-import json
-from connection import run_query
-
-SQL = """
-${currentSql}
-"""
-
-rows = run_query(SQL)
-print(json.dumps(rows, indent=2, default=str))
-print(f"\\n{len(rows)} row(s) returned.")
-`;
-
-  const envExample = `# ServiceNow JDBC credentials
-# Copy this file to .env and fill in your values.
-# NEVER commit .env — it is listed in .gitignore.
-
-SN_USER=${cfg.user}
-SN_PASS=your_password_here
-`;
-
-  const envFile = `SN_USER=${cfg.user}
-SN_PASS=${cfg.pass || 'your_password_here'}
-`;
-
-  const gitignore = `# ── Secrets — NEVER commit these ──────────────────────────
-.env
-.env.*
-!.env.example
-
-# ── ServiceNow JDBC driver ─────────────────────────────────
-drivers/
-*.jar
-
-# ── Python ────────────────────────────────────────────────
-__pycache__/
-*.py[cod]
-.venv/
-venv/
-
-# ── OS / Editor ───────────────────────────────────────────
-.DS_Store
-Thumbs.db
-.idea/
-.vscode/
-`;
-
-  const runQuerySh = `#!/bin/bash
-# Run from the project root. Edit query.py, save, run this script — no rebuild needed.
-docker run --rm --env-file .env \\
-  -v "$(pwd)/query.py:/app/query.py" \\
-  sn-jdbc-app python query.py
-`;
-
-  const runLocalPy = `#!/usr/bin/env python3
-# run_local.py — run SQL queries locally against ServiceNow JDBC
-# Usage:  python run_local.py --sql "SELECT ..."
-#         python run_local.py --file query.sql
-#         python run_local.py --file query.sql --format json
-#         python run_local.py --file query.sql --format csv --out results.csv
-import argparse, csv, json, os, sys
-from pathlib import Path
-from dotenv import load_dotenv
-import jaydebeapi
-
-load_dotenv()  # reads .env from current directory
-
-DRIVER = "com.servicenow.jdbc.Driver"
-URL    = "jdbc:servicenow://https://${cfg.instance}.service-now.com"
-JAR    = "${cfg.jar}"
-
-def get_sql(args):
-    if args.file: return Path(args.file).read_text().strip()
-    if args.sql:  return args.sql.strip()
-    raise ValueError("Provide --sql 'SELECT ...' or --file query.sql")
-
-def run_query(sql):
-    conn = jaydebeapi.connect(DRIVER, URL, [os.environ["SN_USER"], os.environ["SN_PASS"]], JAR)
-    cur  = conn.cursor()
-    cur.execute(sql)
-    cols = [d[0] for d in cur.description]
-    rows = cur.fetchall()
-    conn.close()
-    return cols, rows
-
-def output(cols, rows, fmt, out_file=None):
-    if fmt == "json":
-        data = [dict(zip(cols, r)) for r in rows]
-        text = json.dumps(data, indent=2, default=str)
-        if out_file: Path(out_file).write_text(text)
-        else: print(text)
-    elif fmt == "csv":
-        dest = open(out_file, "w", newline="") if out_file else sys.stdout
-        w = csv.writer(dest)
-        w.writerow(cols); w.writerows(rows)
-        if out_file: dest.close()
-    else:
-        widths = [max(len(str(c)), max((len(str(r[i])) for r in rows), default=0)) for i, c in enumerate(cols)]
-        sep = "+" + "+".join("-" * (w + 2) for w in widths) + "+"
-        fmt_row = lambda r: "|" + "|".join(" " + str(v).ljust(w) + " " for v, w in zip(r, widths)) + "|"
-        print(sep); print(fmt_row(cols)); print(sep)
-        for r in rows: print(fmt_row(r))
-        print(sep)
-
-if __name__ == "__main__":
-    p = argparse.ArgumentParser(description="Run SQL against ServiceNow JDBC")
-    p.add_argument("--sql");  p.add_argument("--file")
-    p.add_argument("--format", choices=["table","json","csv"], default="table")
-    p.add_argument("--out")
-    args = p.parse_args()
-    cols, rows = run_query(get_sql(args))
-    output(cols, rows, args.format, args.out)
-    print(f"\n{len(rows)} row(s).", file=sys.stderr)
-`;
+  const envFile = envContent();
 
   try {
     const zip = new JSZip();
-    zip.file('Dockerfile',        dockerfile);
-    zip.file('requirements.txt',  requirementsTxt);
-    zip.file('connection.py',     connectionPy);
-    zip.file('query.py',          queryPy);
-    zip.file('run_query.sh',      runQuerySh);
-    zip.file('run_local.py',      runLocalPy);
-    zip.file('.env.example',      envExample);
-    zip.file('.gitignore',        gitignore);
-    if (cfg.pass) zip.file('.env', envFile);
-    zip.folder('drivers');   // placeholder so developers know where to put the JAR
-
+    zip.file('GETTING-STARTED.txt', gettingStarted);
+    zip.file('.env.example', envExample);
+    zip.file('.env', envFile);
     const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = 'sn-jdbc-project.zip';
+    a.download = 'sn-sql-api-starter.zip';
     a.click();
     URL.revokeObjectURL(a.href);
     showToast(T().zipToast);
@@ -2148,6 +2046,10 @@ function qrCopy(btn) {
 
 sqLoad();
 loadProgress();
+const _rb = document.getElementById('repoBanner');
+const _rgb = document.getElementById('repoGuideBadge');
+if (_rb) _rb.innerHTML = T().repoBanner;
+if (_rgb) _rgb.textContent = T().repoGuideBadge;
 render();
 updateEnvPreview();
 updateZipPreview();

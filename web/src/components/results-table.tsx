@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "preact/hooks";
+import { useCallback, useEffect, useMemo, useState } from "preact/hooks";
 import type { CellValue, QueryResult } from "../lib/api";
+import { tabularToCsv } from "../lib/csv";
 import { useSortedRows } from "../hooks/use-sorted-rows";
 import { useVirtualList } from "../hooks/use-virtual-list";
 import { cn } from "../lib/cn";
@@ -88,6 +89,19 @@ export const ResultsTable = ({ result }: ResultsTableProps) => {
     return `repeat(${n}, minmax(${MIN_COL_WIDTH}px, auto))`;
   }, [result.columns.length]);
 
+  const handleDownloadCsv = useCallback(() => {
+    const csv = tabularToCsv(result.columns, filteredRows);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const stamp = new Date().toISOString().slice(0, 19).replace(/:/g, "-");
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `query-results-${stamp}.csv`;
+    anchor.rel = "noopener";
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }, [result.columns, filteredRows]);
+
   if (result.columns.length === 0) {
     return (
       <div class="flex h-48 items-center justify-center rounded-lg border border-border bg-surface text-sm text-muted">
@@ -137,6 +151,19 @@ export const ResultsTable = ({ result }: ResultsTableProps) => {
             <span class="text-subtle">cols</span>
             <span class="text-text">{result.columns.length}</span>
           </span>
+          <button
+            type="button"
+            class="btn"
+            onClick={handleDownloadCsv}
+            disabled={sortedRows.length === 0}
+            title={
+              sortedRows.length === 0
+                ? "No rows to export"
+                : "Download current table (sorted, filtered) as a .csv file"
+            }
+          >
+            Export CSV
+          </button>
         </div>
       </div>
 

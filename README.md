@@ -8,7 +8,11 @@ This project implements a containerized Python API to run SQL queries through th
 
 **Authoritative setup:** [Configure JDBC driver](https://www.servicenow.com/docs/r/api-reference/web-services/configure-jdbc-driver.html) and [Create JDBC connection](https://www.servicenow.com/docs/r/zurich/platform-security/connections-and-credentials/create-JDBC-connection.html).
 
-Optional companion guide: [ServiceNow JDBC · Python Container Setup](https://rafamessias.github.io/sn-sql-api/).
+### JDBC setup wizard (GitHub Pages)
+
+The interactive **EN / PT-BR** step-by-step guide (live config panel, `.env` generator, copy-ready snippets, troubleshooting) ships in [`docs/`](./docs/). **Live site:** [rafamessias.github.io/sn-sql-api](https://rafamessias.github.io/sn-sql-api/).
+
+If you maintain this repo: open **GitHub → Settings → Pages**, choose **Deploy from a branch**, set branch **`main`** and folder **`/docs`** so the wizard stays separate from the Python project root. Editing `docs/index.html` and pushing redeploys the site within about a minute.
 
 ## 1) Prerequisites
 
@@ -59,7 +63,7 @@ API will be available at `http://localhost:8000`.
 
 ## 5) Web SQL console
 
-A browser-based SQL client is served by the same container at the root URL. The UI is a small **Preact + TailwindCSS** app built with Vite; it shares the visual identity of the [companion setup guide](https://rafamessias.github.io/sn-sql-api/) (GitHub‑dark theme with IBM Plex fonts).
+A browser-based SQL client is served by the same container at the root URL. The UI is a small **Preact + TailwindCSS** app built with Vite; it shares the visual identity of the [JDBC setup wizard](https://rafamessias.github.io/sn-sql-api/) (GitHub‑dark theme with IBM Plex fonts).
 
 Open `http://localhost:8000/` (or `http://localhost:5173/` in dev mode — see §6). The console has three tabs and a global **connection selector** in the header.
 
@@ -246,6 +250,7 @@ curl -X POST http://localhost:8000/schema/columns \
 ├── Dockerfile                 # multi-stage build: Node (UI) + Python (API)
 ├── docker-compose.yml         # production-style run
 ├── docker-compose.dev.yml     # hot-reload override (src volume + --reload)
+├── docs/                      # GitHub Pages wizard (index.html + favicons)
 ├── src/                       # FastAPI service
 │   ├── config.py
 │   ├── jdbc_client.py
