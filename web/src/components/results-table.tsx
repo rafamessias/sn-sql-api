@@ -10,6 +10,8 @@ const MIN_COL_WIDTH = 160;
 
 type ResultsTableProps = {
   result: QueryResult;
+  resultsExpanded?: boolean;
+  onToggleResultsExpanded?: () => void;
 };
 
 const cellSearchText = (value: CellValue): string => {
@@ -52,7 +54,11 @@ const SortGlyph = ({ active, dir }: { active: boolean; dir: "asc" | "desc" | nul
   );
 };
 
-export const ResultsTable = ({ result }: ResultsTableProps) => {
+export const ResultsTable = ({
+  result,
+  resultsExpanded = false,
+  onToggleResultsExpanded,
+}: ResultsTableProps) => {
   const { sortedRows, sort, toggleSort } = useSortedRows(result.rows);
   const [filterText, setFilterText] = useState("");
 
@@ -111,7 +117,12 @@ export const ResultsTable = ({ result }: ResultsTableProps) => {
   }
 
   return (
-    <div class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-surface">
+    <div
+      class={cn(
+        "flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-surface",
+        resultsExpanded && "h-full w-full min-h-0 min-w-0",
+      )}
+    >
       <div class="flex flex-wrap items-end justify-between gap-3 border-b border-border bg-surface-2 px-4 py-2">
         <div class="flex min-w-0 flex-1 flex-wrap items-end gap-3">
           <div class="flex shrink-0 items-center gap-2 font-mono text-[11px] text-subtle">
@@ -164,6 +175,26 @@ export const ResultsTable = ({ result }: ResultsTableProps) => {
           >
             Export CSV
           </button>
+          {onToggleResultsExpanded ? (
+            <button
+              type="button"
+              class="btn"
+              onClick={onToggleResultsExpanded}
+              aria-expanded={resultsExpanded}
+              aria-label={
+                resultsExpanded
+                  ? "Collapse results panel"
+                  : "Expand results over the editor at full viewport width"
+              }
+              title={
+                resultsExpanded
+                  ? "Dock the results below the editor again"
+                  : "Float results over the editor (full column height, full viewport width for wide tables)"
+              }
+            >
+              {resultsExpanded ? "Collapse" : "Expand"}
+            </button>
+          ) : null}
         </div>
       </div>
 

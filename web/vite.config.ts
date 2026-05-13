@@ -1,11 +1,20 @@
 import { defineConfig } from "vite";
 import preact from "@preact/preset-vite";
+import { BACKEND_PROXY_PATH_PREFIXES, spa404Plugin } from "./vite-plugin-spa-404";
 
 const BACKEND = process.env.VITE_BACKEND_URL ?? "http://localhost:8000";
+
+/** Do not proxy `/schema` alone — that path is the SPA Schema tab. Only proxy API routes. */
+const backendProxy = Object.fromEntries(
+  BACKEND_PROXY_PATH_PREFIXES.map((prefix) => [
+    prefix,
+    { target: BACKEND, changeOrigin: true },
+  ]),
+);
 const USE_POLLING = process.env.VITE_USE_POLLING === "true";
 
 export default defineConfig({
-  plugins: [preact()],
+  plugins: [spa404Plugin(), preact()],
   server: {
     port: 5173,
     strictPort: true,
@@ -16,16 +25,7 @@ export default defineConfig({
           interval: 300,
         }
       : undefined,
-    proxy: {
-      "/query": { target: BACKEND, changeOrigin: true },
-      // Do not proxy `/schema` alone — that path is the SPA Schema tab. Only proxy API routes.
-      "/schema/tables": { target: BACKEND, changeOrigin: true },
-      "/schema/columns": { target: BACKEND, changeOrigin: true },
-      "/health": { target: BACKEND, changeOrigin: true },
-      "/egress-ip": { target: BACKEND, changeOrigin: true },
-      "/about": { target: BACKEND, changeOrigin: true },
-      "/debug": { target: BACKEND, changeOrigin: true },
-    },
+    proxy: backendProxy,
   },
   build: {
     outDir: "dist",

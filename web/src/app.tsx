@@ -103,20 +103,32 @@ export const App = () => {
 
       <main class="mx-auto flex min-h-0 min-w-0 w-full max-w-[1400px] flex-1 flex-col px-6 py-5">
         {activeTab === "editor" && (
-          <EditorPanel
-            tabs={editorTabs}
-            activeId={editorActiveId}
-            activeTab={editorActiveTab}
-            onSelectTab={selectEditorTab}
-            onCloseTab={closeEditorTab}
-            onRenameTab={renameEditorTab}
-            onAddTab={handleNewEditorTab}
-            onActiveQueryChange={setActiveQuery}
-            onLastSuccessfulRunDuration={setEditorTabLastRunDurationMs}
-            connectionPayload={connectionPayload}
-            connectionLabel={connectionLabel}
-            schemaTables={schemaTables}
-          />
+          <>
+            <div class="mb-2 flex shrink-0 items-center justify-end text-[11px] text-subtle">
+              <span class="mr-2">Run with</span>
+              <kbd class="rounded border border-border bg-surface-2 px-1.5 py-0.5 font-mono text-[10px] text-text">
+                Ctrl
+              </kbd>
+              <span class="px-1">+</span>
+              <kbd class="rounded border border-border bg-surface-2 px-1.5 py-0.5 font-mono text-[10px] text-text">
+                Enter
+              </kbd>
+            </div>
+            <EditorPanel
+              tabs={editorTabs}
+              activeId={editorActiveId}
+              activeTab={editorActiveTab}
+              onSelectTab={selectEditorTab}
+              onCloseTab={closeEditorTab}
+              onRenameTab={renameEditorTab}
+              onAddTab={handleNewEditorTab}
+              onActiveQueryChange={setActiveQuery}
+              onLastSuccessfulRunDuration={setEditorTabLastRunDurationMs}
+              connectionPayload={connectionPayload}
+              connectionLabel={connectionLabel}
+              schemaTables={schemaTables}
+            />
+          </>
         )}
 
         {activeTab === "schema" && (

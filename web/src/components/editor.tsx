@@ -22,6 +22,7 @@ type EditorProps = {
   onQueryChange: (next: string) => void;
   isRunning: boolean;
   onRun: () => void;
+  onStop: () => void;
   onClear: () => void;
   onCopySql: () => void;
   onDownloadSql: () => void;
@@ -72,6 +73,7 @@ export const Editor = ({
   onQueryChange,
   isRunning,
   onRun,
+  onStop,
   onClear,
   onCopySql,
   onDownloadSql,
@@ -234,6 +236,17 @@ export const Editor = ({
           >
             {isRunning ? "Running…" : "Run query"}
           </button>
+          {isRunning ? (
+            <button
+              type="button"
+              class="btn border-danger/50 bg-danger/10 text-danger hover:border-danger hover:bg-danger/20 hover:text-danger focus-visible:ring-danger"
+              onClick={onStop}
+              title="Abort the request (closes the browser connection)"
+              aria-label="Stop running query"
+            >
+              Stop
+            </button>
+          ) : null}
           <button
             type="button"
             class="btn"

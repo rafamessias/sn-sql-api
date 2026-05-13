@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>404 — Query returned no rows (nor this page)</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;1,400&family=IBM+Plex+Sans:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #0d1117;
+        --surface: #161b22;
+        --border: #30363d;
+        --text: #e6edf3;
+        --muted: #8b949e;
+        --accent: #3fb950;
+        --accent-dim: #1a4422;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1.5rem;
+        font-family: "IBM Plex Sans", system-ui, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+      }
+      .card {
+        max-width: 28rem;
+        width: 100%;
+        padding: 2rem 1.75rem;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        box-shadow: 0 0 0 1px rgba(63, 185, 80, 0.08);
+      }
+      .code {
+        font-family: "IBM Plex Mono", ui-monospace, monospace;
+        font-size: 4rem;
+        font-weight: 600;
+        line-height: 1;
+        letter-spacing: -0.06em;
+        color: var(--accent);
+        text-shadow: 0 0 40px rgba(63, 185, 80, 0.35);
+      }
+      .eyebrow {
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.14em;
+        color: var(--muted);
+        margin-bottom: 0.75rem;
+      }
+      h1 {
+        font-size: 1.25rem;
+        font-weight: 600;
+        margin: 0 0 0.75rem;
+      }
+      p {
+        margin: 0 0 1rem;
+        color: var(--muted);
+        line-height: 1.55;
+        font-size: 0.95rem;
+      }
+      p:last-of-type {
+        margin-bottom: 1.5rem;
+      }
+      .mono {
+        font-family: "IBM Plex Mono", ui-monospace, monospace;
+        font-size: 0.85rem;
+        color: var(--text);
+      }
+      a {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        padding: 0.65rem 1rem;
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: 0.9rem;
+        text-decoration: none;
+        color: var(--accent);
+        background: var(--accent-dim);
+        border: 1px solid rgba(63, 185, 80, 0.35);
+        transition: background 0.15s ease, border-color 0.15s ease;
+      }
+      a:hover {
+        background: rgba(63, 185, 80, 0.22);
+        border-color: rgba(63, 185, 80, 0.55);
+      }
+      a:focus-visible {
+        outline: none;
+        box-shadow: 0 0 0 3px rgba(63, 185, 80, 0.25);
+      }
+    </style>
+  </head>
+  <body>
+    <article class="card">
+      <div class="eyebrow">HTTP / JDBC vibes</div>
+      <div class="code">404</div>
+      <h1>This path is not in your catalog</h1>
+      <p>
+        Either the URL typo’d harder than a midnight <span class="mono">DELETE FROM user</span> in prod, or this
+        page took an unscheduled glide record vacation.
+      </p>
+      <p>No worries — the console is still wired. Roll back to home and run something that actually exists.</p>
+      <a href="/">Back to the SQL console</a>
+    </article>
+  </body>
+</html>

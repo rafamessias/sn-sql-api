@@ -1,0 +1,10 @@
+# Optional faster builds: re-enable Docker layer cache and skip base-image pulls.
+# Default docker-compose.yml uses pull + no_cache so `up --build` is always fresh.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.cached.yml up --build
+
+services:
+  sn-sql-api:
+    build:
+      pull: false
+      no_cache: false

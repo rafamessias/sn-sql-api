@@ -37,6 +37,19 @@ cp .env.example .env
 
 Edit `.env`. The checked-in [`.env.example`](./.env.example) targets the **native** driver and a typical instance JAR name; adjust to match what you actually use.
 
+Example file (same keys as in the repo — copy to `.env` and replace values):
+
+```env
+SN_INSTANCE=mycompanyInstanceName
+SN_USERNAME=service.account
+SN_PASSWORD=replace_me
+SN_JDBC_DRIVER_CLASS=com.snc.db.jdbc.JDBCDriver
+SN_JDBC_JAR_PATH=/app/drivers/ServiceNow-JDBC-2.0.0.jar
+API_ONLY=false
+```
+
+**`API_ONLY`** — when `false` (as in the template above), the process serves the bundled **web SQL console** at `GET /` alongside the REST API. When `true` (also `1`, `yes`, `on`), the app runs **headless**: all JSON routes behave the same, but `/` is a minimal landing page instead of the SQL UI — typical for production behind a gateway or when the browser client must stay off. Details in §4.1.
+
 **Required**
 
 - `SN_INSTANCE` — short name (e.g. `mycompany`) or full hostname (`mycompany.service-now.com`).
@@ -48,7 +61,6 @@ Edit `.env`. The checked-in [`.env.example`](./.env.example) targets the **nativ
 - `SN_JDBC_DRIVER_CLASS` — must match the driver class for your JAR (Simba vs native). Defaults to `com.simba.servicenow.jdbc.Driver`; use `com.snc.db.jdbc.JDBCDriver` for the instance download JAR when that is what you ship.
 - `SN_JDBC_URL` — full JDBC URL override; normalized for native `jdbc:servicenow://…` URLs as described above.
 - `API_KEY` — if set, protected routes require the `x-api-key` header (see §5 and §7).
-- `API_ONLY` — when `true` (`1`, `yes`, `on` also accepted), the container runs **headless**: it does **not** serve the bundled web UI at `/`. All REST endpoints stay fully functional. Defaults to `false`. See §4.1 for details.
 
 ## 3) Add JDBC driver
 
@@ -103,7 +115,29 @@ You should see `status`, `instance`, and `jdbc_driver_class`. Open **`http://loc
 - Foreground: `Ctrl+C`, then `docker compose down`.
 - Background: `docker compose down`.
 
-**Rebuild** when you change `Dockerfile`, `requirements.txt`, or the `web/` app and need a fresh image: `docker compose build --no-cache` then `docker compose up`.
+**Rebuild:** with the default compose file, **`docker compose up --build`** already skips layer cache (see below). If you overrode with `docker-compose.cached.yml`, run `docker compose build --no-cache` before `up` when something looks stale.
+
+**If `/` still looks like an old build** after `up --build`: the API now sends **`Cache-Control: no-store`** for `/`, `/index.html`, `/assets/*`, and `/ui-image-build.txt` so a normal refresh picks up a new image; still try a private window if something looks stuck. Confirm `.env` does not set `API_ONLY=true`; run `docker compose down && docker compose up --build --force-recreate`. **See exactly which files the API is serving:** `curl -s http://localhost:8000/debug/ui-serving | jq .` — check `index_html_sha256`, `vite_module_script_src`, and `ui_image_build_stamp`. If **`app_src_bind_mount`** is non-null, `/app/src` is mounted from your host (for example you merged **dev** compose or use `docker-compose.override.yml` with `./src:/app/src`), so **`localhost:8000` uses that tree’s `src/static/dist`**, not the UI baked into the image — either use **`http://localhost:5173`** for the live Vite UI or remove the `./src` volume for a pure prod run. Check `curl -s http://localhost:8000/ui-image-build.txt` (**404** = stamp file absent on that bundle). On **Docker Desktop + WSL2**, run Compose from the **same repo path you edit** (Windows `C:\…` vs WSL `/home/…` clones differ). The image build ignores local `src/static/dist/` (see [`.dockerignore`](./.dockerignore)).
+
+**Default image build is always “full”:** [`docker-compose.yml`](./docker-compose.yml) sets `build.pull: true` and `build.no_cache: true`, so **`docker compose up --build`** re-runs `npm ci` / `npm run build` for the UI and reinstalls Python deps from `requirements.txt` every time — you get the latest `web/` and `src/` from the directory where you run Compose. That is slower but avoids stale layers. For **cached** (faster) local iteration when you accept cache invalidation risk, add [`docker-compose.cached.yml`](./docker-compose.cached.yml):
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.cached.yml up --build
+```
+
+For CI, use the default compose from a **clean checkout** with a committed `web/package-lock.json` (the Dockerfile uses `npm ci` when the lockfile is present).
+
+### Copy bundled UI from the image to `src/static/dist/` (optional)
+
+[`docker-compose.yml`](./docker-compose.yml) defines **`sync-web-dist-to-host`** (profile **`sync-web-dist`**): a one-shot container that copies **`/app/src/static/dist`** from **`sn-sql-api:local`** into **`./src/static/dist`** on the host. The service shares the same **`build:`** as **`sn-sql-api`**, so **`--build`** runs the full Dockerfile first (including **`npm run build`** for `web/`), then copies the fresh bundle. Use it when **dev compose** bind-mounts `./src` and you want **`http://localhost:8000/`** to show the same bundle as the image (instead of only using **`http://localhost:5173`**).
+
+```bash
+docker compose --profile sync-web-dist run --build --rm sync-web-dist-to-host
+```
+
+If the image is already up to date, you can omit **`--build`** and the copy step alone runs faster.
+
+Files may be owned by `root` inside the container; on Linux use `sudo chown -R "$(id -u):$(id -g)" src/static/dist` if needed.
 
 ### 4.1) API-only (headless) production mode
 
@@ -133,7 +167,7 @@ Notes:
 
 A browser-based SQL client is served by the same container at the root URL. The UI is a small **Preact + TailwindCSS** app built with Vite; it shares the visual identity of the [JDBC setup wizard](https://rafamessias.github.io/sn-sql-api/) (GitHub‑dark theme with IBM Plex fonts).
 
-Open **`http://localhost:8000/`** after `docker compose up` (or **`http://localhost:5173/`** in dev mode — see §6). The console has three tabs and a **connection** dropdown in the header (default option **`.env`** = server-side credentials from your container environment).
+Open **`http://localhost:8000/`** after `docker compose up` (or **`http://localhost:5173/`** in dev mode — see §6). The console has **Editor**, **Schema**, **Connections**, and **Logs** tabs and a **connection** dropdown in the header (default option **`.env`** = server-side credentials from your container environment).
 
 ### Quick start
 
@@ -147,7 +181,7 @@ Open **`http://localhost:8000/`** after `docker compose up` (or **`http://localh
 - Type a query and press <kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>Enter</kbd>, or click **Run query**.
 - Results render in a **virtualized, sortable table** with sticky headers and row‑count badge — smooth with tens of thousands of rows.
 - Click any column header to sort (asc → desc → off). `NULL`, numbers and booleans are styled distinctly.
-- **Copy CSV** copies the current result set to the clipboard.
+- **Export CSV** downloads the current result set as a comma-separated file.
 - The query runs against whichever connection is active. If **`.env`** is selected, the server uses only values from the container `.env` (no per-request override).
 - If `API_KEY` is set, the bundled UI still does **not** send `x-api-key`. **`POST /query`**, **`POST /schema/*`**, and **`POST /health/check`** then return **401**, so the badge shows an error and queries fail. For local use, omit `API_KEY`, or call the API with **`curl` / Swagger** and the header, or terminate TLS at a gateway that injects the key.
 
@@ -217,11 +251,15 @@ This single command starts **both** services:
 
 Open `http://localhost:5173/`. Tailwind classes and Preact components hot‑reload instantly; Python edits reload the API. No image rebuild is needed unless `requirements.txt`, `Dockerfile`, or `web/package.json` changes.
 
+> **`localhost:8000` in dev is not your Vite UI.** Dev compose bind‑mounts **`./src` → `/app/src`**, so **`src/static/dist/` on your host** is exactly what FastAPI serves at `/` on **8000**. If you **deleted** that folder (or never built into it), `/` shows the small **placeholder** HTML — the SQL console is still at **`http://localhost:5173`**. To serve the built SPA on 8000 during dev: `cd web && npm run build && mkdir -p ../src/static/dist && cp -r dist/* ../src/static/dist/`. **Prod-only** `docker compose up --build` (no `./src` mount) always bakes `dist` into the image, so deleting host `src/static` does not break that stack. Use `GET /debug/ui-serving` (`app_src_bind_mount` non-null ⇒ host `./src` is masking the image).
+
 > The Vite container's `node_modules` lives in a named Docker volume (`web_node_modules`), so it doesn't fight whatever you may have on your host. The first `up` takes a bit longer because it installs deps; subsequent runs are fast.
 
 > **WSL2 / Docker Desktop:** [`docker-compose.dev.yml`](./docker-compose.dev.yml) sets `CHOKIDAR_USEPOLLING` and `VITE_USE_POLLING` on `web-dev` so file saves inside bind mounts trigger HMR reliably.
 
 To stop everything: `Ctrl+C`, then `docker compose -f docker-compose.yml -f docker-compose.dev.yml down`.
+
+> **If `up` fails with `network … not found` or warns about orphan containers** (e.g. after pruning networks or renaming a service): run **`docker compose -f docker-compose.yml -f docker-compose.dev.yml down --remove-orphans`**, then **`up`** again. That drops stale networks and removes one-off containers from old compose definitions.
 
 ### Tip: add a shell alias
 
@@ -274,6 +312,7 @@ Interactive API docs (Swagger UI): `http://localhost:8000/docs`.
 | POST   | `/schema/tables`   | `x-api-key`               | List tables via JDBC metadata. Body: `{ pattern?, connection? }` |
 | POST   | `/schema/columns`  | `x-api-key`               | List columns of a table. Body: `{ table, connection? }` |
 | GET    | `/debug/jdbc-auth` | `x-api-key`               | Masked diagnostics about the configured connection |
+| GET    | `/debug/ui-serving` | none                     | Which `static/dist` files this process serves (paths, `index.html` hash, bind-mount hint); use when Docker shows the “wrong” UI |
 | GET    | `/about`           | none                      | Author and MIT license credits (also reachable from the UI via the Konami code or 5 clicks on the ⌘ logo) |
 
 The optional `connection` body field on `/query`, `/schema/tables`, `/schema/columns`, and `/health/check` accepts:
@@ -333,6 +372,7 @@ curl -X POST http://localhost:8000/schema/columns \
 .
 ├── Dockerfile                 # multi-stage build: Node (UI) + Python (API)
 ├── docker-compose.yml         # production-style run
+├── docker-compose.cached.yml  # optional: layer cache (faster, use with care)
 ├── docker-compose.dev.yml     # hot-reload override (src volume + --reload)
 ├── docs/                      # GitHub Pages wizard (index.html + favicons)
 ├── src/                       # FastAPI service

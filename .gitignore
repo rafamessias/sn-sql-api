@@ -17,6 +17,9 @@ src/static/dist/
 drivers/*.jar
 **/*Zone.Identifier
 
+# Local toolchains / scratch venvs
+.venv-tmp/
+
 # IDE / OS
 .idea/
 .vscode/

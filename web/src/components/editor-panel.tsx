@@ -3,7 +3,8 @@ import { Editor } from "./editor";
 import { EditorTabsBar } from "./editor-tabs-bar";
 import { ResultsTable } from "./results-table";
 import { StatusBar } from "./status-bar";
-import { runQuery, type QueryResult } from "../lib/api";
+import { isAbortError, runQuery, type QueryResult } from "../lib/api";
+import { cn } from "../lib/cn";
 import {
   downloadTextFile,
   sanitizeDownloadStem,
@@ -55,6 +56,9 @@ export const EditorPanel = ({
     Record<string, QueryResult | null>
   >({});
   const [statusByTab, setStatusByTab] = useState<Record<string, Status>>({});
+  const [resultsExpandedByTab, setResultsExpandedByTab] = useState<
+    Record<string, boolean>
+  >({});
   const abortRefByTab = useRef<Map<string, AbortController>>(new Map());
   const runningTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const runningForTabIdRef = useRef<string | null>(null);
@@ -70,6 +74,7 @@ export const EditorPanel = ({
   useEffect(() => () => clearRunningTimer(), [clearRunningTimer]);
 
   const result = resultsByTab[activeId] ?? null;
+  const resultsExpanded = resultsExpandedByTab[activeId] ?? false;
   const statusFromMemory = statusByTab[activeId];
   const status =
     statusFromMemory ??
@@ -145,7 +150,14 @@ export const EditorPanel = ({
         message: `${data.row_count.toLocaleString()} row(s) in ${formatDurationMs(elapsed)} · ${label}`,
       });
     } catch (err) {
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted || isAbortError(err)) {
+        const elapsed = Math.round(performance.now() - started);
+        setTabStatus({
+          kind: "idle",
+          message: `Stopped after ${formatDurationMs(elapsed)} · ${label}`,
+        });
+        return;
+      }
       const elapsed = Math.round(performance.now() - started);
       const message = err instanceof Error ? err.message : "Unknown error";
       setTabResult(null);
@@ -167,10 +179,20 @@ export const EditorPanel = ({
     setActiveStatus,
   ]);
 
+  const handleStop = useCallback(() => {
+    abortRefByTab.current.get(activeId)?.abort();
+  }, [activeId]);
+
   const handleClear = useCallback(() => {
     abortRefByTab.current.get(activeId)?.abort();
     onActiveQueryChange("");
     setActiveResult(null);
+    setResultsExpandedByTab((prev) => {
+      if (!(activeId in prev)) return prev;
+      const next = { ...prev };
+      delete next[activeId];
+      return next;
+    });
     setActiveStatus(
       activeTab.lastRunDurationMs != null
         ? {
@@ -254,13 +276,28 @@ export const EditorPanel = ({
         delete next[id];
         return next;
       });
+      setResultsExpandedByTab((prev) => {
+        if (!(id in prev)) return prev;
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
       onCloseTab(id);
     },
     [clearRunningTimer, onCloseTab],
   );
 
+  const handleToggleResultsExpanded = useCallback(() => {
+    setResultsExpandedByTab((prev) => ({
+      ...prev,
+      [activeId]: !(prev[activeId] ?? false),
+    }));
+  }, [activeId]);
+
+  const editorUnderlayHidden = Boolean(result && resultsExpanded);
+
   return (
-    <section class="grid min-h-0 min-w-0 flex-1 grid-rows-[auto_auto_auto_minmax(0,1fr)] gap-4">
+    <section class="grid min-h-0 min-w-0 flex-1 grid-rows-[auto_minmax(0,1fr)] gap-4">
       <EditorTabsBar
         tabs={tabs}
         activeId={activeId}
@@ -270,35 +307,93 @@ export const EditorPanel = ({
         onAdd={onAddTab}
       />
 
-      <Editor
-        query={activeTab.query}
-        onQueryChange={onActiveQueryChange}
-        isRunning={status.kind === "running"}
-        onRun={handleRun}
-        onClear={handleClear}
-        onCopySql={handleCopySql}
-        onDownloadSql={handleDownloadSql}
-        onDownloadTxt={handleDownloadTxt}
-        schemaTables={schemaTables}
-      />
+      <div class="relative isolate flex min-h-0 min-w-0 flex-1 flex-col gap-4">
+        {!result ? (
+          <>
+            <div class="min-h-0 min-w-0 flex-1 overflow-y-auto">
+              <Editor
+                query={activeTab.query}
+                onQueryChange={onActiveQueryChange}
+                isRunning={status.kind === "running"}
+                onRun={handleRun}
+                onStop={handleStop}
+                onClear={handleClear}
+                onCopySql={handleCopySql}
+                onDownloadSql={handleDownloadSql}
+                onDownloadTxt={handleDownloadTxt}
+                schemaTables={schemaTables}
+              />
+            </div>
+            <div class="shrink-0">
+              <StatusBar
+                kind={status.kind}
+                message={status.message}
+                errorCopyText={
+                  status.kind === "error"
+                    ? (status.copyText ?? status.message)
+                    : undefined
+                }
+              />
+            </div>
+            <div class="flex min-h-0 min-w-0 flex-[2] items-center justify-center rounded-lg border border-dashed border-border bg-surface/50 text-sm text-muted">
+              Run a query to see results here.
+            </div>
+          </>
+        ) : (
+          <>
+            <div
+              class={cn(
+                "min-w-0 shrink-0",
+                editorUnderlayHidden && "pointer-events-none select-none",
+              )}
+              aria-hidden={editorUnderlayHidden ? true : undefined}
+            >
+              <Editor
+                query={activeTab.query}
+                onQueryChange={onActiveQueryChange}
+                isRunning={status.kind === "running"}
+                onRun={handleRun}
+                onStop={handleStop}
+                onClear={handleClear}
+                onCopySql={handleCopySql}
+                onDownloadSql={handleDownloadSql}
+                onDownloadTxt={handleDownloadTxt}
+                schemaTables={schemaTables}
+              />
+            </div>
 
-      <StatusBar
-        kind={status.kind}
-        message={status.message}
-        errorCopyText={
-          status.kind === "error"
-            ? (status.copyText ?? status.message)
-            : undefined
-        }
-      />
+            <div
+              class={cn("shrink-0", editorUnderlayHidden && "pointer-events-none")}
+              aria-hidden={editorUnderlayHidden ? true : undefined}
+            >
+              <StatusBar
+                kind={status.kind}
+                message={status.message}
+                errorCopyText={
+                  status.kind === "error"
+                    ? (status.copyText ?? status.message)
+                    : undefined
+                }
+              />
+            </div>
 
-      {result ? (
-        <ResultsTable result={result} />
-      ) : (
-        <div class="flex min-h-[240px] items-center justify-center rounded-lg border border-dashed border-border bg-surface/50 text-sm text-muted">
-          Run a query to see results here.
-        </div>
-      )}
+            <div
+              class={cn(
+                "flex min-h-0 min-w-0 flex-col",
+                resultsExpanded
+                  ? "pointer-events-auto absolute left-1/2 top-0 z-50 flex h-full min-h-0 w-[calc(100vw-2rem)] -translate-x-1/2 flex-col overflow-hidden rounded-lg bg-surface shadow-2xl ring-1 ring-border sm:w-[calc(100vw-4rem)]"
+                  : "relative flex-1 min-h-0",
+              )}
+            >
+              <ResultsTable
+                result={result}
+                resultsExpanded={resultsExpanded}
+                onToggleResultsExpanded={handleToggleResultsExpanded}
+              />
+            </div>
+          </>
+        )}
+      </div>
     </section>
   );
 };

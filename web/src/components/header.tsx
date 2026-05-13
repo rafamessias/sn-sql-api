@@ -192,17 +192,6 @@ export const Header = ({
             <span>{label}</span>
           </span>
         </div>
-
-        <div class="text-[11px] text-subtle">
-          Run with{" "}
-          <kbd class="rounded border border-border bg-surface-2 px-1.5 py-0.5 font-mono text-[10px] text-text">
-            Ctrl
-          </kbd>
-          <span class="px-1">+</span>
-          <kbd class="rounded border border-border bg-surface-2 px-1.5 py-0.5 font-mono text-[10px] text-text">
-            Enter
-          </kbd>
-        </div>
       </div>
     </header>
   );

@@ -7,6 +7,11 @@
 web/node_modules
 web/dist
 
+# Host copy of the bundled UI must never enter the context: it is easy to have a
+# stale tree here after `cd web && npm run build`, and `COPY --from=web-builder`
+# merges into this folder — leaving orphaned hashed chunks and broken loads.
+src/static/dist
+
 # Local-only files
 .env
 .env.local

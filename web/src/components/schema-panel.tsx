@@ -8,6 +8,15 @@ import {
 } from "../lib/api";
 import type { ConnectionPayload } from "../lib/connections";
 import { buildSelectSql, parseExpressions } from "../lib/query-builder-sql";
+import {
+  deleteSchemaColumnsCache,
+  readSchemaColumnsCache,
+  writeSchemaColumnsCache,
+} from "../lib/schema-columns-cache";
+import {
+  readSchemaTablesCache,
+  writeSchemaTablesCache,
+} from "../lib/schema-tables-cache";
 import { cn } from "../lib/cn";
 import { SchemaSnippetEditor } from "./schema-snippet-editor";
 
@@ -89,11 +98,22 @@ export const SchemaPanel = ({
     async (force = false) => {
       tablesAbortRef.current?.abort();
       const cached = tableCacheRef.current.get(payloadKey);
-      if (!force && cached) {
+      if (!force && cached !== undefined) {
         setTables(cached);
         setTablesPhase("ready");
         setTablesError(null);
         return;
+      }
+
+      if (!force) {
+        const fromStorage = readSchemaTablesCache(payloadKey);
+        if (fromStorage !== null) {
+          tableCacheRef.current.set(payloadKey, fromStorage);
+          setTables(fromStorage);
+          setTablesPhase("ready");
+          setTablesError(null);
+          return;
+        }
       }
 
       const controller = new AbortController();
@@ -108,6 +128,7 @@ export const SchemaPanel = ({
           controller.signal,
         );
         tableCacheRef.current.set(payloadKey, data.tables);
+        writeSchemaTablesCache(payloadKey, data.tables);
         setTables(data.tables);
         setTablesPhase("ready");
       } catch (err) {
@@ -130,8 +151,15 @@ export const SchemaPanel = ({
     setColumnFilter("");
     setColumnSort("default");
     setFunctionsText("");
-    const cached = tableCacheRef.current.get(payloadKey);
-    if (cached) {
+    let cached = tableCacheRef.current.get(payloadKey);
+    if (cached === undefined) {
+      const stored = readSchemaTablesCache(payloadKey);
+      if (stored !== null) {
+        tableCacheRef.current.set(payloadKey, stored);
+        cached = stored;
+      }
+    }
+    if (cached !== undefined) {
       setTables(cached);
       setTablesPhase("ready");
     } else {
@@ -145,28 +173,38 @@ export const SchemaPanel = ({
     };
   }, [payloadKey, loadTables]);
 
-  const handleSelectTable = useCallback(
-    async (table: string) => {
-      setActiveTable(table);
-      setSelectedColumns([]);
-      setOrderBy("");
-      setColumnFilter("");
-      setColumnSort("default");
-      setFunctionsText("");
+  const loadColumnsForTable = useCallback(
+    async (table: string, force: boolean) => {
+      columnsAbortRef.current?.abort();
 
       const cacheForConnection =
         columnCacheRef.current.get(payloadKey) ?? {};
       const cachedCols = cacheForConnection[table];
       // Empty arrays are truthy in JS — never treat a cached [] as a hit or it
       // skips refetch forever after one failed or dictionary-empty response.
-      if (Array.isArray(cachedCols) && cachedCols.length > 0) {
+      if (
+        !force &&
+        Array.isArray(cachedCols) &&
+        cachedCols.length > 0
+      ) {
         setColumns(cachedCols);
         setColumnsPhase("ready");
         setColumnsError(null);
         return;
       }
 
-      columnsAbortRef.current?.abort();
+      if (!force) {
+        const fromStorage = readSchemaColumnsCache(payloadKey, table);
+        if (fromStorage !== null) {
+          const nextCache = { ...cacheForConnection, [table]: fromStorage };
+          columnCacheRef.current.set(payloadKey, nextCache);
+          setColumns(fromStorage);
+          setColumnsPhase("ready");
+          setColumnsError(null);
+          return;
+        }
+      }
+
       const controller = new AbortController();
       columnsAbortRef.current = controller;
       setColumnsPhase("loading");
@@ -182,8 +220,10 @@ export const SchemaPanel = ({
         const nextCache = { ...cacheForConnection };
         if (data.columns.length > 0) {
           nextCache[table] = data.columns;
+          writeSchemaColumnsCache(payloadKey, table, data.columns);
         } else {
           delete nextCache[table];
+          deleteSchemaColumnsCache(payloadKey, table);
         }
         columnCacheRef.current.set(payloadKey, nextCache);
         setColumns(data.columns);
@@ -195,6 +235,19 @@ export const SchemaPanel = ({
       }
     },
     [connectionPayload, payloadKey],
+  );
+
+  const handleSelectTable = useCallback(
+    (table: string) => {
+      setActiveTable(table);
+      setSelectedColumns([]);
+      setOrderBy("");
+      setColumnFilter("");
+      setColumnSort("default");
+      setFunctionsText("");
+      void loadColumnsForTable(table, false);
+    },
+    [loadColumnsForTable],
   );
 
   const filteredTables = useMemo(() => {
@@ -436,7 +489,21 @@ export const SchemaPanel = ({
                       <span class="font-mono text-[11px] text-subtle">
                         Columns — click to add to SELECT
                       </span>
-                      <div class="flex items-center gap-2">
+                      <div class="flex flex-wrap items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          class="btn btn-primary py-0.5 text-[11px]"
+                          onClick={() =>
+                            activeTable &&
+                            void loadColumnsForTable(activeTable, true)
+                          }
+                          disabled={columnsPhase === "loading"}
+                          title="Fetch the latest column list from the server"
+                        >
+                          {columnsPhase === "loading"
+                            ? "Reloading…"
+                            : "Reload columns"}
+                        </button>
                         <button
                           type="button"
                           onClick={toggleAllVisible}

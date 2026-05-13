@@ -1,8 +1,15 @@
+x-sn-sql-api-build: &sn-sql-api-build
+  context: .
+  dockerfile: Dockerfile
+  # Always match the files on disk (avoids stale UI/backend from layer cache).
+  pull: true
+  no_cache: true
+
 services:
   sn-sql-api:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    # Fixed tag so `up --build` always replaces the image you run (avoids a stale unnamed image).
+    image: sn-sql-api:local
+    build: *sn-sql-api-build
     container_name: sn-sql-api
     env_file:
       - .env
@@ -11,3 +18,21 @@ services:
     volumes:
       - ./drivers:/app/drivers:ro
     restart: unless-stopped
+
+  # One-shot: rebuild the image (includes `npm run build` in Dockerfile), then copy
+  # /app/src/static/dist from that image into ./src/static/dist on the host.
+  #   docker compose --profile sync-web-dist run --build --rm sync-web-dist-to-host
+  sync-web-dist-to-host:
+    profiles: ["sync-web-dist"]
+    image: sn-sql-api:local
+    build: *sn-sql-api-build
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        set -e;
+        mkdir -p /out;
+        find /out -mindepth 1 -delete;
+        cp -a /app/src/static/dist/. /out/;
+        echo "sync-web-dist-to-host: wrote $$(find /out -type f | wc -l) files under ./src/static/dist"
+    volumes:
+      - ./src/static/dist:/out

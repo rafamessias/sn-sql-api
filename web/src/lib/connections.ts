@@ -24,6 +24,8 @@ export const SERVER_DEFAULT_ID = "__server_default__";
 export const STORAGE_KEYS = {
   connections: "sn-sql-api:connections:v1",
   activeId: "sn-sql-api:connections:activeId",
+  /** Cached outbound egress IP from GET /api/egress-ip; refreshed on demand. */
+  egressIp: "sn-sql-api:egress-ip:v1",
 } as const;
 
 export const EXPORT_FORMAT = "sn-sql-api.connections.v1";

@@ -1,8 +1,14 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "preact/hooks";
 import type { JSX } from "preact";
 import { ConnectionForm } from "./connection-form";
 import {
   SERVER_DEFAULT_ID,
+  STORAGE_KEYS,
   buildExport,
   connectionInstanceLabel,
   parseImport,
@@ -32,6 +38,32 @@ type EgressState =
   | { status: "ok"; ip: string }
   | { status: "error"; message: string };
 
+const isPlausibleCachedEgressIp = (raw: string): boolean => {
+  const ip = raw.trim();
+  if (ip.length < 7 || ip.length > 45) return false;
+  if (/[\s\r\n]/.test(ip)) return false;
+  return true;
+};
+
+const readCachedEgressIp = (): EgressState | null => {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEYS.egressIp);
+    if (!raw || !isPlausibleCachedEgressIp(raw)) return null;
+    return { status: "ok", ip: raw.trim() };
+  } catch {
+    return null;
+  }
+};
+
+const persistEgressIp = (ip: string): void => {
+  try {
+    window.localStorage.setItem(STORAGE_KEYS.egressIp, ip);
+  } catch {
+    // ignore quota / private mode
+  }
+};
+
 const egressStateFromApi = (data: EgressIpInfo): EgressState => {
   if (data.ip) return { status: "ok", ip: data.ip };
   if (data.error) return { status: "error", message: data.error };
@@ -49,7 +81,9 @@ const runEgressLookup = async (
   try {
     const data = await fetchEgressIp(signal);
     if (signal.aborted) return;
-    setEgress(egressStateFromApi(data));
+    const next = egressStateFromApi(data);
+    setEgress(next);
+    if (next.status === "ok") persistEgressIp(next.ip);
   } catch (err) {
     if (signal.aborted) return;
     const message = err instanceof Error ? err.message : String(err);
@@ -86,11 +120,18 @@ export const ConnectionsPanel = ({
   );
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const deleteCancelRef = useRef<HTMLButtonElement | null>(null);
-  const [egress, setEgress] = useState<EgressState>({ status: "loading" });
+  const [egress, setEgress] = useState<EgressState>(() =>
+    typeof window !== "undefined"
+      ? readCachedEgressIp() ?? { status: "loading" }
+      : { status: "loading" },
+  );
   const [egressCopied, setEgressCopied] = useState<boolean>(false);
 
   useEffect(() => {
     const controller = new AbortController();
+    if (readCachedEgressIp()?.status === "ok") {
+      return () => controller.abort();
+    }
     void runEgressLookup(controller.signal, setEgress);
     return () => controller.abort();
   }, []);
@@ -199,7 +240,7 @@ export const ConnectionsPanel = ({
           onChange={handleImportFile}
         />
         <span class="ml-auto font-mono text-[11px] text-subtle">
-          stored in browser localStorage · not synced
+          stored in browser localStorage
         </span>
       </div>
 

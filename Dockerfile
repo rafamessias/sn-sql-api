@@ -10,7 +10,9 @@ COPY web/package.json web/package-lock.json* ./
 RUN if [ -f package-lock.json ]; then npm ci; else npm install --no-audit --no-fund; fi
 
 COPY web ./
-RUN npm run build
+# Single layer: UI output + stamp (open http://localhost:8000/ui-image-build.txt to verify this image).
+RUN npm run build \
+    && printf "ui-image-build %s\\n" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > dist/ui-image-build.txt
 
 
 # ── 2) Python runtime ─────────────────────────────────────────────────────────
@@ -29,6 +31,10 @@ COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY src /app/src
+
+# Replace any empty or leftover dist dir so we never merge new assets onto a
+# stale host-built tree from an older COPY layer.
+RUN rm -rf /app/src/static/dist
 
 # Drop the built UI alongside the Python source so FastAPI can serve it.
 COPY --from=web-builder /web/dist /app/src/static/dist

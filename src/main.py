@@ -1,5 +1,7 @@
+import hashlib
 import json
 import logging
+import re
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -9,6 +11,9 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response, 
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, SecretStr
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.responses import FileResponse, Response
+from starlette.types import Scope
 
 from src.config import settings
 from src.jdbc_client import (
@@ -22,6 +27,105 @@ from src.jdbc_client import (
 STATIC_DIR = Path(__file__).parent / "static"
 DIST_DIR = STATIC_DIR / "dist"
 DIST_INDEX = DIST_DIR / "index.html"
+
+# Paths that load the SPA shell (see `web/src/hooks/use-console-tab.ts`); everything else gets `404.html`.
+_SPA_SHELL_SEGMENTS = frozenset({"editor", "schema", "connections", "logs"})
+
+
+def _spa_serves_index_html(path: str) -> bool:
+    """Whether a missing static path should receive `index.html` (tab deep links) vs the HTML 404 page."""
+    if path == "index.html":
+        return True
+    trimmed = path.strip("/")
+    if not trimmed:
+        return True
+    if "/" in trimmed:
+        return False
+    return trimmed in _SPA_SHELL_SEGMENTS
+
+
+class _SpaStaticFiles(StaticFiles):
+    """`StaticFiles(html=True)` does not fall back to `index.html` for client-only paths (e.g. `/editor`).
+
+    Starlette only auto-serves `index.html` for **directory** URLs and optional `404.html`; missing
+    files otherwise return 404, which FastAPI surfaces as JSON — breaking SPA deep links on reload.
+
+    Unknown non-asset paths return the bundled `404.html` with status 404 when present.
+    """
+
+    async def get_response(self, path: str, scope: Scope) -> Response:
+        try:
+            return await super().get_response(path, scope)
+        except StarletteHTTPException as exc:
+            if exc.status_code != 404 or not self.html:
+                raise
+            # Real missing bundles should stay 404 (avoid masking typos / stale deploys).
+            if path == "assets" or path.startswith("assets/"):
+                raise
+            if _spa_serves_index_html(path):
+                return await super().get_response("index.html", scope)
+            dist_404 = Path(self.directory) / "404.html"
+            if dist_404.is_file():
+                return FileResponse(dist_404, status_code=404)
+            return await super().get_response("index.html", scope)
+
+
+_DIST_INDEX_MODULE_SCRIPT = re.compile(
+    r"""<script[^>]*type=["']module["'][^>]*src=["']([^"']+)["']""",
+    re.IGNORECASE,
+)
+
+
+def _app_src_bind_mount_source() -> str | None:
+    """If present, `/app/src` is a bind mount (e.g. dev compose) and replaces image `static/dist`."""
+    try:
+        raw = Path("/proc/mounts").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    for line in raw.splitlines():
+        parts = line.split()
+        if len(parts) >= 3 and parts[1] == "/app/src":
+            return parts[0]
+    return None
+
+
+def _ui_serving_probe() -> dict[str, object]:
+    """Facts about which bundled UI files this process is using (for Docker / path debugging)."""
+    stamp_path = DIST_DIR / "ui-image-build.txt"
+    stamp: str | None = None
+    if stamp_path.is_file():
+        stamp = stamp_path.read_text(encoding="utf-8", errors="replace").strip()
+
+    index_sha256: str | None = None
+    module_script_src: str | None = None
+    if DIST_INDEX.is_file():
+        raw_index = DIST_INDEX.read_bytes()
+        index_sha256 = hashlib.sha256(raw_index).hexdigest()
+        text = raw_index.decode("utf-8", errors="replace")
+        m = _DIST_INDEX_MODULE_SCRIPT.search(text)
+        if m:
+            module_script_src = m.group(1)
+
+    assets_dir = DIST_DIR / "assets"
+    js_assets: list[str] = []
+    if assets_dir.is_dir():
+        js_assets = sorted(p.name for p in assets_dir.glob("*.js"))[:12]
+
+    return {
+        "dist_dir": str(DIST_DIR.resolve()),
+        "index_html_present": DIST_INDEX.is_file(),
+        "index_html_sha256": index_sha256,
+        "vite_module_script_src": module_script_src,
+        "ui_image_build_stamp": stamp,
+        "js_asset_filenames": js_assets,
+        "app_src_bind_mount": _app_src_bind_mount_source(),
+    }
+
+
+def _log_bundled_ui_serving() -> None:
+    log = logging.getLogger("uvicorn.error")
+    probe = _ui_serving_probe()
+    log.info("sn-sql-api bundled UI probe: %s", json.dumps(probe, default=str))
 
 
 class _LocalhostBindFilter(logging.Filter):
@@ -69,6 +173,23 @@ app = FastAPI(
         "url": "https://opensource.org/licenses/MIT",
     },
 )
+
+
+@app.middleware("http")
+async def _no_store_for_bundled_ui(request: Request, call_next):
+    """Browsers often cache `/` and `/assets/*` aggressively; stale shells look like 'old Docker'."""
+    response = await call_next(request)
+    path = request.url.path
+    if (
+        path == "/"
+        or path == "/index.html"
+        or path == "/ui-image-build.txt"
+        or path == "/favicon.ico"
+        or path.startswith("/assets/")
+    ):
+        response.headers["Cache-Control"] = "no-store, max-age=0, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+    return response
 
 
 class ConnectionPayload(BaseModel):
@@ -472,8 +593,34 @@ def _render_about_html(info: AboutResponse) -> str:
       dl {{ margin: 12px 0; display: grid; grid-template-columns: 80px 1fr; gap: 8px 12px; font-size: 13px; }}
       dt {{ color: #6e7681; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }}
       dd {{ margin: 0; color: #e6edf3; }}
-      a {{ color: #3fb950; text-decoration: none; }}
-      a:hover {{ text-decoration: underline; }}
+      a:not(.btn-back) {{ color: #3fb950; text-decoration: none; }}
+      a:not(.btn-back):hover {{ text-decoration: underline; }}
+      .btn-back {{
+        box-sizing: border-box;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        margin-top: 18px;
+        padding: 0.65rem 1rem;
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: 0.9rem;
+        text-decoration: none;
+        color: #3fb950;
+        background: #1a4422;
+        border: 1px solid rgba(63, 185, 80, 0.35);
+        transition: background 0.15s ease, border-color 0.15s ease;
+      }}
+      .btn-back:hover {{
+        background: rgba(63, 185, 80, 0.22);
+        border-color: rgba(63, 185, 80, 0.55);
+        text-decoration: none;
+      }}
+      .btn-back:focus-visible {{
+        outline: none;
+        box-shadow: 0 0 0 3px rgba(63, 185, 80, 0.25);
+      }}
       .egg-wrap {{
         display: flex;
         justify-content: flex-end;
@@ -591,10 +738,10 @@ def _render_about_html(info: AboutResponse) -> str:
           <div class="egg-body">{info.banner}</div>
         </details>
       </div>
+      <a class="btn-back" href="/">Back to the SQL console</a>
       <p class="footer">
         Prefer JSON? <a href="/about?format=json">/about?format=json</a>
         — or <code>curl -H 'Accept: application/json' /about</code>.
-        Back to the <a href="/">console</a>.
       </p>
     </main>
 {_HADOUKEN_HTML}
@@ -706,6 +853,21 @@ def healthcheck_connection(
 @app.get("/debug/jdbc-auth", dependencies=[Depends(verify_api_key)])
 def debug_jdbc_auth() -> dict[str, object]:
     return settings.jdbc_auth_debug
+
+
+@app.get(
+    "/debug/ui-serving",
+    include_in_schema=False,
+    summary="Which bundled UI files this process serves (Docker troubleshooting)",
+)
+def debug_ui_serving() -> dict[str, object]:
+    """Shows the resolved `static/dist` path, asset fingerprints, and bind-mount hints.
+
+    If `app_src_bind_mount` is set, `/app/src` is mounted from the host (typical
+    dev compose) and **overrides** the UI that was copied into the image — use
+    `http://localhost:5173` for the Vite UI or drop the `./src` volume for prod.
+    """
+    return _ui_serving_probe()
 
 
 @app.post(
@@ -941,9 +1103,10 @@ if settings.api_only:
         return _API_ONLY_HTML
 
 elif DIST_INDEX.exists():
+    _log_bundled_ui_serving()
     app.mount(
         "/",
-        StaticFiles(directory=str(DIST_DIR), html=True),
+        _SpaStaticFiles(directory=str(DIST_DIR), html=True),
         name="web",
     )
 else:

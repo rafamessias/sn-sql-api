@@ -305,14 +305,14 @@ strong{color:var(--tx);font-weight:500}
       <input class="fi" id="cfgInstance" placeholder="mycompany" value="mycompany">
       <div class="cfg-hint" id="hintInstance">→ mycompany.service-now.com</div>
       <div class="fl" id="lblUser">Service account username</div>
-      <input class="fi" id="cfgUser" placeholder="svc_jdbc_account" value="svc_jdbc_account">
+      <input class="fi" id="cfgUser" placeholder="service.account" value="service.account">
       <div class="fl" id="lblPass">Password</div>
       <div class="pw-row">
         <input class="fi" id="cfgPass" type="password" placeholder="••••••••" autocomplete="off">
         <button class="eye-btn" id="eyeBtn" onclick="toggleEye()" title="Show/hide">👁</button>
       </div>
       <div class="fl" id="lblJar">JAR file path (in container)</div>
-      <input class="fi" id="cfgJar" placeholder="/app/drivers/servicenow-jdbc.jar" value="/app/drivers/servicenow-jdbc.jar">
+      <input class="fi" id="cfgJar" placeholder="/app/drivers/ServiceNow-JDBC-2.0.0.jar" value="/app/drivers/ServiceNow-JDBC-2.0.0.jar">
       <div class="cfg-hint" id="hintSnippets">Code snippets update live ↑</div>
     </div>
 
@@ -437,7 +437,7 @@ const TRANSLATIONS = {
       cmtClone: '# HTTPS (recommended for first-time setup)',
       divZip: 'Or use the starter ZIP',
       zipHint: 'Use the <strong>Starter ZIP</strong> button in the left sidebar to download a minimal <ic>.env</ic> template and quick-start notes, then merge into your clone.',
-      info: '<strong>Repository layout (after clone):</strong> application code lives under <ic>src/</ic>; the browser UI is built from <ic>web/</ic> into <ic>src/static/dist/</ic> when you build the Docker image.',
+      info: '<strong>Repository layout (after clone):</strong> application code lives under <ic>src/</ic>; the browser UI lives under <ic>web/</ic>. Before <ic>docker compose build</ic>, run <ic>./scripts/prepare-ui-for-docker.sh</ic> to compile the UI into <ic>src/static/dist/</ic> (gitignored) so the image includes the bundle.',
       warn: '<strong>Never commit secrets or the JDBC JAR.</strong> Keep <ic>.env</ic> and <ic>drivers/*.jar</ic> local and listed in <ic>.gitignore</ic> as in the upstream repo.',
       cmt1: '# FastAPI + JDBC client', cmt2: '# built UI → served at /', cmt3: '# your instance JAR (not in git)',
     },
@@ -448,8 +448,8 @@ const TRANSLATIONS = {
       jarTitle: 'drivers/ on your laptop',
       jarBody: 'Save the JAR as e.g. <ic>./drivers/servicenow-jdbc.jar</ic>. Compose mounts <ic>./drivers</ic> read-only at <ic>/app/drivers</ic>. Set <ic>SN_JDBC_JAR_PATH</ic> in <ic>.env</ic> to the <strong>container path</strong> of that file.',
       stackTitle: 'What the Dockerfile does (summary)',
-      cmt1: '# Stage 1 — npm run build in web/',
-      cmt2: '# Stage 2 — Python + headless JRE for JDBC',
+      cmt1: '# Host — ./scripts/prepare-ui-for-docker.sh → src/static/dist/',
+      cmt2: '# Image — Python + headless JRE; COPY src includes the bundle',
       cmt3: '# JDBC bridge: jaydebeapi + JPype1',
       warn: '<strong>Driver vs URL:</strong> Match <ic>SN_JDBC_DRIVER_CLASS</ic> to your JAR (native <ic>com.snc.db.jdbc.JDBCDriver</ic> vs Simba <ic>com.simba.servicenow.jdbc.Driver</ic>). Use the JDBC URL format from the official doc, or set <ic>SN_JDBC_URL</ic> explicitly — see <ic>src/config.py</ic>.',
       divBuild: 'When you are ready to build',
@@ -467,7 +467,7 @@ const TRANSLATIONS = {
       cmt1: '# Required',
       cmt2: '# Optional — full JDBC URL from your doc / instance',
       cmt3: '# Optional — if set, protects POST /query, /schema/*, /health/check, /debug/jdbc-auth',
-      cmt6: '# Optional — true = headless (REST API only, no web UI at /)',
+      cmt6: '# API_ONLY — false = SQL console at /; true = headless (REST only, minimal page at /)',
       cmt4: '# Native instance JAR often uses com.snc.db.jdbc.JDBCDriver',
       cmt5: '# Default Simba driver in code: com.simba.servicenow.jdbc.Driver',
       doc1: '',
@@ -482,7 +482,7 @@ const TRANSLATIONS = {
       divRun: 'What you get',
       divCompose: 'compose excerpt (from the repo)',
       divEnv: '.env file',
-      envDesc: 'Use the panel on the left to fill instance, user, password, and JAR path, then download or copy. Add optional <ic>SN_JDBC_URL</ic>, <ic>API_KEY</ic>, or <ic>API_ONLY=true</ic> (headless mode — no web UI at <ic>/</ic>) in your editor if needed.',
+      envDesc: 'Use the panel on the left to fill instance, user, password, driver, and JAR path, then download or copy. The generated file includes <ic>API_ONLY=false</ic> like the repo <ic>.env.example</ic> (serves the SQL console at <ic>/</ic>). Set <ic>API_ONLY=true</ic> for headless production; add <ic>SN_JDBC_URL</ic> or <ic>API_KEY</ic> in your editor if needed.',
       envRunCmd: '# After drivers/ and .env are ready',
       info: '<strong>Security:</strong> <ic>/query</ic> runs arbitrary SQL. Do not expose the container publicly without network policy, reverse proxy auth, or similar controls.',
       cmtCompose: '# sn-sql-api service — see repository for full file',
@@ -720,7 +720,7 @@ Set <ic>SN_JDBC_DRIVER_CLASS</ic> to the documented class for that JAR (often <i
       cmtClone: '# HTTPS (recomendado na primeira vez)',
       divZip: 'Ou use o ZIP inicial',
       zipHint: 'Use o botão <strong>ZIP inicial</strong> na barra lateral para baixar um modelo de <ic>.env</ic> e notas rápidas; depois mescle no diretório do clone.',
-      info: '<strong>Layout após o clone:</strong> o código da API fica em <ic>src/</ic>; a UI do navegador é gerada a partir de <ic>web/</ic> para <ic>src/static/dist/</ic> no build da imagem Docker.',
+      info: '<strong>Layout após o clone:</strong> o código da API fica em <ic>src/</ic>; a UI fica em <ic>web/</ic>. Antes de <ic>docker compose build</ic>, execute <ic>./scripts/prepare-ui-for-docker.sh</ic> para compilar a UI em <ic>src/static/dist/</ic> (gitignored) e incluir o bundle na imagem.',
       warn: '<strong>Nunca faça commit de segredos nem do JAR.</strong> Mantenha <ic>.env</ic> e <ic>drivers/*.jar</ic> locais e no <ic>.gitignore</ic> como no repositório upstream.',
       cmt1: '# FastAPI + cliente JDBC', cmt2: '# UI compilada → servida em /', cmt3: '# JAR da sua instância (fora do git)',
     },
@@ -750,7 +750,7 @@ Set <ic>SN_JDBC_DRIVER_CLASS</ic> to the documented class for that JAR (often <i
       cmt1: '# Obrigatórias',
       cmt2: '# Opcional — URL JDBC completa da doc / instância',
       cmt3: '# Opcional — se definido, protege POST /query, /schema/*, /health/check, /debug/jdbc-auth',
-      cmt6: '# Opcional — true = modo headless (somente API REST, sem UI em /)',
+      cmt6: '# API_ONLY — false = console SQL em /; true = headless (só API, página mínima em /)',
       cmt4: '# JAR nativo da instância costuma usar com.snc.db.jdbc.JDBCDriver',
       cmt5: '# Driver Simba padrão no código: com.simba.servicenow.jdbc.Driver',
       doc1: '',
@@ -764,7 +764,7 @@ Set <ic>SN_JDBC_DRIVER_CLASS</ic> to the documented class for that JAR (often <i
       divRun: 'O que você obtém',
       divCompose: 'trecho do compose (do repositório)',
       divEnv: 'arquivo .env',
-      envDesc: 'Use o painel à esquerda para instância, usuário, senha e caminho do JAR; baixe ou copie. Adicione <ic>SN_JDBC_URL</ic>, <ic>API_KEY</ic> ou <ic>API_ONLY=true</ic> (modo headless — sem UI em <ic>/</ic>) no editor se precisar.',
+      envDesc: 'Use o painel à esquerda para instância, usuário, senha, driver e caminho do JAR; baixe ou copie. O arquivo gerado inclui <ic>API_ONLY=false</ic> como no <ic>.env.example</ic> do repositório (serve o console SQL em <ic>/</ic>). Use <ic>API_ONLY=true</ic> em produção headless; adicione <ic>SN_JDBC_URL</ic> ou <ic>API_KEY</ic> no editor se precisar.',
       envRunCmd: '# Depois de drivers/ e .env prontos',
       info: '<strong>Segurança:</strong> <ic>/query</ic> executa SQL arbitrário. Não exponha o container publicamente sem política de rede, autenticação no proxy, etc.',
       cmtCompose: '# serviço sn-sql-api — veja o arquivo completo no repositório',
@@ -945,7 +945,7 @@ function setLang(l) {
 }
 
 // ── Config ───────────────────────────────────────────────
-const cfg = { instance: 'mycompany', user: 'svc_jdbc_account', pass: '', jar: '/app/drivers/servicenow-jdbc.jar' };
+const cfg = { instance: 'mycompany', user: 'service.account', pass: '', jar: '/app/drivers/ServiceNow-JDBC-2.0.0.jar' };
 document.getElementById('cfgInstance').addEventListener('input', e => { cfg.instance = e.target.value || 'myinstance'; updateTpl(); updateEnvPreview(); updateZipPreview(); });
 document.getElementById('cfgUser').addEventListener('input',     e => { cfg.user     = e.target.value || 'svc_jdbc';   updateTpl(); updateEnvPreview(); updateZipPreview(); });
 document.getElementById('cfgPass').addEventListener('input',     e => { cfg.pass     = e.target.value;                 updateEnvPreview(); updateZipPreview(); });
@@ -1125,10 +1125,10 @@ function buildConnection() {
   <div class="ch"><span class="cfile">.env</span><button class="copy-btn" onclick="copyCode(this)">${T().copy}</button></div>
   <div class="cb"><span class="cmt">${t.cmt1}</span>
 <span class="var">SN_INSTANCE</span>=<span class="str"><span data-tpl="instance">mycompany</span></span>
-<span class="var">SN_USERNAME</span>=<span class="str"><span data-tpl="user">svc_jdbc_account</span></span>
+<span class="var">SN_USERNAME</span>=<span class="str"><span data-tpl="user">service.account</span></span>
 <span class="var">SN_PASSWORD</span>=<span class="str">…</span>
-<span class="var">SN_JDBC_JAR_PATH</span>=<span class="str"><span data-tpl="jar">/app/drivers/servicenow-jdbc.jar</span></span>
 <span class="var">SN_JDBC_DRIVER_CLASS</span>=<span class="str">com.snc.db.jdbc.JDBCDriver</span>
+<span class="var">SN_JDBC_JAR_PATH</span>=<span class="str"><span data-tpl="jar">/app/drivers/ServiceNow-JDBC-2.0.0.jar</span></span>
 
 <span class="cmt">${t.cmt2}</span>
 <span class="cmt"># SN_JDBC_URL=</span>
@@ -1137,12 +1137,12 @@ function buildConnection() {
 <span class="cmt"># API_KEY=</span>
 
 <span class="cmt">${t.cmt6}</span>
-<span class="cmt"># API_ONLY=false</span>
+<span class="var">API_ONLY</span>=<span class="str">false</span>
 
 <span class="cmt">${t.cmt4}</span>
 <span class="cmt">${t.cmt5}</span></div>
 </div>
-<p style="font-size:13px;color:var(--tm)">See <ic>src/config.py</ic> for how <ic>SN_JDBC_URL</ic> overrides URL construction and how the native driver (<ic>com.snc.db.jdbc.JDBCDriver</ic>) switches to <ic>jdbc:servicenow://https://…</ic> with JDBC properties. <ic>API_ONLY=true</ic> runs the container headless — the REST API stays available, but <ic>/</ic> shows a minimal landing page instead of the SQL console.</p>
+<p style="font-size:13px;color:var(--tm)">See <ic>src/config.py</ic> for how <ic>SN_JDBC_URL</ic> overrides URL construction and how the native driver (<ic>com.snc.db.jdbc.JDBCDriver</ic>) switches to <ic>jdbc:servicenow://https://…</ic> with JDBC properties. <ic>API_ONLY</ic> matches the repo <ic>.env.example</ic>: <ic>false</ic> serves the SQL console at <ic>/</ic>; <ic>true</ic> runs headless — same REST endpoints, but <ic>/</ic> is a minimal landing page (see README §4.1).</p>
 <div class="alert a-warn"><span class="ai">⚠</span><span>${t.warn}</span></div>`;
 }
 
@@ -1414,10 +1414,10 @@ SN_USERNAME=${cfg.user}
 SN_PASSWORD=${passVal}
 SN_JDBC_DRIVER_CLASS=com.snc.db.jdbc.JDBCDriver
 SN_JDBC_JAR_PATH=${cfg.jar}
+API_ONLY=false
 # Optional:
 # SN_JDBC_URL=
 # API_KEY=
-# API_ONLY=false   # set to true for headless (no web UI) production mode
 `;
 }
 
@@ -1433,6 +1433,7 @@ function updateEnvPreview() {
     ['SN_PASSWORD', passVal],
     ['SN_JDBC_DRIVER_CLASS', 'com.snc.db.jdbc.JDBCDriver'],
     ['SN_JDBC_JAR_PATH', cfg.jar],
+    ['API_ONLY', 'false'],
   ];
   el.innerHTML = lines.map(([k, v]) =>
     `<span style="color:var(--var)">${k}</span>=<span style="color:var(--str)">${escHtml(v)}</span>`
@@ -1448,6 +1449,7 @@ function updateEnvPreview() {
     }).concat([
       `<span style="color:var(--var)">SN_JDBC_DRIVER_CLASS</span>=<span style="color:var(--str)">com.snc.db.jdbc.JDBCDriver</span>`,
       `<span style="color:var(--var)">SN_JDBC_JAR_PATH</span>=<span style="color:var(--str)">${escHtml(cfg.jar)}</span>`,
+      `<span style="color:var(--var)">API_ONLY</span>=<span style="color:var(--str)">false</span>`,
     ]).join('\n');
   }
 }
@@ -1707,6 +1709,7 @@ https://github.com/rafamessias/sn-sql-api
    SN_PASSWORD — JDBC password (never commit real secrets)
    SN_JDBC_DRIVER_CLASS — must match your JAR (often com.snc.db.jdbc.JDBCDriver)
    SN_JDBC_JAR_PATH — path inside the container (must match compose volume)
+   API_ONLY — default false (SQL console at /); true = headless REST-only (README §4.1)
 
 3) Put your ServiceNow JDBC .jar under ./drivers/
 
@@ -1730,6 +1733,9 @@ https://github.com/rafamessias/sn-sql-api
 
 2) Copie os arquivos .env e .env.example deste ZIP para a raiz do repositório.
 
+   SN_INSTANCE, SN_USERNAME, SN_PASSWORD, SN_JDBC_DRIVER_CLASS, SN_JDBC_JAR_PATH — veja README.
+   API_ONLY — padrão false (console em /); true = headless só API (README §4.1)
+
 3) Coloque o JDBC .jar da ServiceNow em ./drivers/
 
 4) Execute
@@ -1748,10 +1754,10 @@ SN_USERNAME=${cfg.user}
 SN_PASSWORD=your_password_here
 SN_JDBC_DRIVER_CLASS=com.snc.db.jdbc.JDBCDriver
 SN_JDBC_JAR_PATH=${cfg.jar}
+API_ONLY=false
 # Optional:
 # SN_JDBC_URL=
 # API_KEY=
-# API_ONLY=false   # set to true for headless (no web UI) production mode
 `;
 
   const envFile = envContent();

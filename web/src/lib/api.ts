@@ -62,7 +62,7 @@ export type ColumnsResponse = {
   columns: ColumnInfo[];
 };
 
-const isAbortError = (err: unknown): boolean =>
+export const isAbortError = (err: unknown): boolean =>
   (typeof DOMException !== "undefined" &&
     err instanceof DOMException &&
     err.name === "AbortError") ||

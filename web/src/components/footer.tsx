@@ -16,12 +16,7 @@ export const Footer = () => (
           {AUTHOR}
         </a>
         {" · "}
-        <a
-          href="/about"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="hover:text-text"
-        >
+        <a href="/about" class="hover:text-text">
           /about
         </a>
       </span>
