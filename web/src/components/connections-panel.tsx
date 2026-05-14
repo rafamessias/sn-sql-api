@@ -16,11 +16,14 @@ import {
   type SavedConnection,
 } from "../lib/connections";
 import { fetchEgressIp, type EgressIpInfo } from "../lib/api";
+import type { ConnectionProbeStatus } from "../hooks/use-connection-probe";
 import { cn } from "../lib/cn";
 
 type ConnectionsPanelProps = {
   connections: SavedConnection[];
   activeId: string;
+  connectionProbeStatus: ConnectionProbeStatus;
+  onRetryConnectionProbe: () => void;
   onSetActive: (id: string) => void;
   onCreate: (form: ConnectionFormState) => SavedConnection;
   onUpdate: (id: string, form: ConnectionFormState) => void;
@@ -34,7 +37,7 @@ type Notice =
   | null;
 
 type EgressState =
-  | { status: "loading" }
+  | { status: "loading"; staleIp?: string }
   | { status: "ok"; ip: string }
   | { status: "error"; message: string };
 
@@ -75,9 +78,13 @@ const egressStateFromApi = (data: EgressIpInfo): EgressState => {
 
 const runEgressLookup = async (
   signal: AbortSignal,
-  setEgress: (next: EgressState) => void,
+  setEgress: (next: EgressState | ((prev: EgressState) => EgressState)) => void,
 ): Promise<void> => {
-  setEgress({ status: "loading" });
+  setEgress((prev) =>
+    prev.status === "ok"
+      ? { status: "loading", staleIp: prev.ip }
+      : { status: "loading" },
+  );
   try {
     const data = await fetchEgressIp(signal);
     if (signal.aborted) return;
@@ -106,6 +113,8 @@ const downloadJson = (filename: string, content: string) => {
 export const ConnectionsPanel = ({
   connections,
   activeId,
+  connectionProbeStatus,
+  onRetryConnectionProbe,
   onSetActive,
   onCreate,
   onUpdate,
@@ -213,6 +222,13 @@ export const ConnectionsPanel = ({
     }
   };
 
+  const egressDisplayIp =
+    egress.status === "ok"
+      ? egress.ip
+      : egress.status === "loading"
+        ? egress.staleIp
+        : undefined;
+
   return (
     <section class="flex min-h-0 flex-1 flex-col gap-4 overflow-auto pr-1">
       <div class="flex flex-wrap items-center gap-2">
@@ -245,20 +261,27 @@ export const ConnectionsPanel = ({
       </div>
 
       <div class="rounded-lg border border-border bg-surface-2 px-4 py-3 font-mono text-[12px] text-text">
-        <div class="flex flex-wrap items-center gap-2 gap-y-1">
+        <div
+          class="flex min-h-8 flex-wrap items-center gap-2 gap-y-1"
+          aria-busy={egress.status === "loading"}
+        >
           <span class="text-subtle">Outbound IP (for instance allow list)</span>
-          {egress.status === "loading" && (
-            <span class="text-muted">looking up…</span>
-          )}
-          {egress.status === "ok" && (
+          {egressDisplayIp != null && (
             <>
-              <code class="rounded border border-border bg-surface px-2 py-0.5 text-info">
-                {egress.ip}
+              <code
+                class={cn(
+                  "rounded border border-border bg-surface px-2 py-0.5 text-info",
+                  egress.status === "loading" && "opacity-50",
+                )}
+              >
+                {egressDisplayIp}
               </code>
               <button
                 type="button"
                 class="btn"
+                disabled={egress.status === "loading"}
                 onClick={async () => {
+                  if (egress.status !== "ok") return;
                   try {
                     await navigator.clipboard.writeText(egress.ip);
                     setEgressCopied(true);
@@ -275,6 +298,7 @@ export const ConnectionsPanel = ({
               <button
                 type="button"
                 class="btn"
+                disabled={egress.status === "loading"}
                 onClick={() => {
                   const controller = new AbortController();
                   void runEgressLookup(controller.signal, setEgress);
@@ -283,6 +307,9 @@ export const ConnectionsPanel = ({
                 Refresh
               </button>
             </>
+          )}
+          {egress.status === "loading" && egressDisplayIp == null && (
+            <span class="text-muted">looking up…</span>
           )}
           {egress.status === "error" && (
             <>
@@ -351,13 +378,13 @@ export const ConnectionsPanel = ({
           <ul class="divide-y divide-border">
             {connections.map((entry) => {
               const label = connectionInstanceLabel(entry);
-              const isActive = entry.id === activeId;
+              const isSelected = entry.id === activeId;
               return (
                 <li
                   key={entry.id}
                   class={cn(
                     "flex flex-wrap items-center gap-3 px-4 py-3",
-                    isActive && "bg-accent-dim/30",
+                    isSelected && "bg-accent-dim/30",
                   )}
                 >
                   <div class="min-w-0 flex-1">
@@ -365,10 +392,25 @@ export const ConnectionsPanel = ({
                       <span class="truncate font-mono text-[13px] text-text">
                         {label}
                       </span>
-                      {isActive && (
+                      {isSelected && connectionProbeStatus.kind === "checking" && (
+                        <span class="badge">
+                          <span class="h-2 w-2 rounded-full bg-subtle animate-pulse" />
+                          checking…
+                        </span>
+                      )}
+                      {isSelected && connectionProbeStatus.kind === "ok" && (
                         <span class="badge badge-ok">
                           <span class="h-2 w-2 rounded-full bg-accent" />
-                          active
+                          connected
+                        </span>
+                      )}
+                      {isSelected && connectionProbeStatus.kind === "error" && (
+                        <span
+                          class="badge badge-err max-w-[min(100%,18rem)]"
+                          title={connectionProbeStatus.message}
+                        >
+                          <span class="h-2 w-2 shrink-0 rounded-full bg-danger" />
+                          <span class="truncate">unreachable</span>
                         </span>
                       )}
                     </div>
@@ -387,13 +429,22 @@ export const ConnectionsPanel = ({
                     </p>
                   </div>
                   <div class="flex items-center gap-2">
-                    {!isActive && (
+                    {!isSelected && (
                       <button
                         type="button"
                         class="btn"
                         onClick={() => onSetActive(entry.id)}
                       >
                         Set active
+                      </button>
+                    )}
+                    {isSelected && connectionProbeStatus.kind === "error" && (
+                      <button
+                        type="button"
+                        class="btn"
+                        onClick={onRetryConnectionProbe}
+                      >
+                        Retry
                       </button>
                     )}
                     <button

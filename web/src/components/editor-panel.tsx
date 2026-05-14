@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "preact/hooks";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "preact/hooks";
 import { Editor } from "./editor";
 import { EditorTabsBar } from "./editor-tabs-bar";
 import { ResultsTable } from "./results-table";
@@ -10,7 +16,17 @@ import {
   sanitizeDownloadStem,
 } from "../lib/download-text-file";
 import { formatDurationMs, formatRunningClock } from "../lib/format-duration-ms";
+import {
+  clampEditorSectionMinHeightPx,
+  persistEditorSectionMinHeightPx,
+  readEditorSectionMinHeightPxFromStorage,
+} from "../lib/editor-section-height";
 import type { ConnectionPayload } from "../lib/connections";
+import {
+  clearQueryResultsByTabStorage,
+  loadQueryResultsByTab,
+  persistQueryResultsByTab,
+} from "../lib/editor-query-results-storage";
 import type { EditorTab } from "../lib/editor-tabs";
 
 type Status =
@@ -50,11 +66,11 @@ export const EditorPanel = ({
   connectionLabel,
   schemaTables,
 }: EditorPanelProps) => {
-  // Per-tab runtime state. Results are session-scoped (in-memory only) so we
-  // don't blow past localStorage quotas with large datasets.
+  // Per-tab results, restored from localStorage so they survive console tab
+  // switches and full reloads. Very large payloads may fail to persist (quota).
   const [resultsByTab, setResultsByTab] = useState<
     Record<string, QueryResult | null>
-  >({});
+  >(() => loadQueryResultsByTab());
   const [statusByTab, setStatusByTab] = useState<Record<string, Status>>({});
   const [resultsExpandedByTab, setResultsExpandedByTab] = useState<
     Record<string, boolean>
@@ -62,6 +78,30 @@ export const EditorPanel = ({
   const abortRefByTab = useRef<Map<string, AbortController>>(new Map());
   const runningTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const runningForTabIdRef = useRef<string | null>(null);
+
+  const [editorSectionMinHeightPx, setEditorSectionMinHeightPx] = useState(
+    readEditorSectionMinHeightPxFromStorage,
+  );
+
+  const adjustEditorSectionMinHeight = useCallback((deltaPx: number) => {
+    setEditorSectionMinHeightPx((prev) => {
+      const next = clampEditorSectionMinHeightPx(prev + deltaPx);
+      persistEditorSectionMinHeightPx(next);
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    const onResize = () => {
+      setEditorSectionMinHeightPx((prev) => {
+        const next = clampEditorSectionMinHeightPx(prev);
+        if (next !== prev) persistEditorSectionMinHeightPx(next);
+        return next;
+      });
+    };
+    globalThis.addEventListener("resize", onResize);
+    return () => globalThis.removeEventListener("resize", onResize);
+  }, []);
 
   const clearRunningTimer = useCallback(() => {
     if (runningTimerRef.current !== null) {
@@ -72,6 +112,49 @@ export const EditorPanel = ({
   }, []);
 
   useEffect(() => () => clearRunningTimer(), [clearRunningTimer]);
+
+  const tabIdsKey = useMemo(() => tabs.map((t) => t.id).join("|"), [tabs]);
+
+  useEffect(() => {
+    const tabIds = new Set(
+      tabIdsKey.length > 0 ? tabIdsKey.split("|") : [],
+    );
+    setResultsByTab((prev) => {
+      const next: Record<string, QueryResult | null> = {};
+      for (const id of tabIds) {
+        if (Object.prototype.hasOwnProperty.call(prev, id)) {
+          next[id] = prev[id]!;
+        }
+      }
+      const prevKeys = Object.keys(prev);
+      const nextKeys = Object.keys(next);
+      if (
+        prevKeys.length === nextKeys.length &&
+        prevKeys.every((k) => prev[k] === next[k])
+      ) {
+        return prev;
+      }
+      return next;
+    });
+  }, [tabIdsKey]);
+
+  useEffect(() => {
+    const tabIds = new Set(
+      tabIdsKey.length > 0 ? tabIdsKey.split("|") : [],
+    );
+    const filtered: Record<string, QueryResult | null> = {};
+    for (const id of tabIds) {
+      if (Object.prototype.hasOwnProperty.call(resultsByTab, id)) {
+        filtered[id] = resultsByTab[id]!;
+      }
+    }
+    persistQueryResultsByTab(filtered);
+  }, [resultsByTab, tabIdsKey]);
+
+  const hasStoredResults = useMemo(
+    () => Object.values(resultsByTab).some(Boolean),
+    [resultsByTab],
+  );
 
   const result = resultsByTab[activeId] ?? null;
   const resultsExpanded = resultsExpandedByTab[activeId] ?? false;
@@ -294,6 +377,17 @@ export const EditorPanel = ({
     }));
   }, [activeId]);
 
+  const handleClearStoredResults = useCallback(() => {
+    clearQueryResultsByTabStorage();
+    setResultsByTab({});
+    setStatusByTab({});
+    setResultsExpandedByTab({});
+    setActiveStatus({
+      kind: "ok",
+      message: "Cleared saved result grids from this browser.",
+    });
+  }, [setActiveStatus]);
+
   const editorUnderlayHidden = Boolean(result && resultsExpanded);
 
   return (
@@ -310,7 +404,10 @@ export const EditorPanel = ({
       <div class="relative isolate flex min-h-0 min-w-0 flex-1 flex-col gap-4">
         {!result ? (
           <>
-            <div class="min-h-0 min-w-0 flex-1 overflow-y-auto">
+            <div
+              class="flex min-h-0 min-w-0 flex-1 flex-col"
+              style={{ minHeight: `${editorSectionMinHeightPx}px` }}
+            >
               <Editor
                 query={activeTab.query}
                 onQueryChange={onActiveQueryChange}
@@ -322,18 +419,32 @@ export const EditorPanel = ({
                 onDownloadSql={handleDownloadSql}
                 onDownloadTxt={handleDownloadTxt}
                 schemaTables={schemaTables}
+                editorSectionMinHeightPx={editorSectionMinHeightPx}
+                onAdjustEditorSectionHeight={adjustEditorSectionMinHeight}
               />
             </div>
-            <div class="shrink-0">
-              <StatusBar
-                kind={status.kind}
-                message={status.message}
-                errorCopyText={
-                  status.kind === "error"
-                    ? (status.copyText ?? status.message)
-                    : undefined
-                }
-              />
+            <div class="shrink-0 flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+              <div class="min-w-0 flex-1">
+                <StatusBar
+                  kind={status.kind}
+                  message={status.message}
+                  errorCopyText={
+                    status.kind === "error"
+                      ? (status.copyText ?? status.message)
+                      : undefined
+                  }
+                />
+              </div>
+              {hasStoredResults ? (
+                <button
+                  type="button"
+                  class="btn shrink-0 self-end px-2 py-0.5 text-[11px] text-muted sm:self-auto"
+                  onClick={handleClearStoredResults}
+                  title="Remove every saved result grid from localStorage (all query tabs)"
+                >
+                  Clear saved results
+                </button>
+              ) : null}
             </div>
             <div class="flex min-h-0 min-w-0 flex-[2] items-center justify-center rounded-lg border border-dashed border-border bg-surface/50 text-sm text-muted">
               Run a query to see results here.
@@ -346,6 +457,7 @@ export const EditorPanel = ({
                 "min-w-0 shrink-0",
                 editorUnderlayHidden && "pointer-events-none select-none",
               )}
+              style={{ minHeight: `${editorSectionMinHeightPx}px` }}
               aria-hidden={editorUnderlayHidden ? true : undefined}
             >
               <Editor
@@ -359,22 +471,39 @@ export const EditorPanel = ({
                 onDownloadSql={handleDownloadSql}
                 onDownloadTxt={handleDownloadTxt}
                 schemaTables={schemaTables}
+                editorSectionMinHeightPx={editorSectionMinHeightPx}
+                onAdjustEditorSectionHeight={adjustEditorSectionMinHeight}
               />
             </div>
 
             <div
-              class={cn("shrink-0", editorUnderlayHidden && "pointer-events-none")}
+              class={cn(
+                "shrink-0 flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3",
+                editorUnderlayHidden && "pointer-events-none",
+              )}
               aria-hidden={editorUnderlayHidden ? true : undefined}
             >
-              <StatusBar
-                kind={status.kind}
-                message={status.message}
-                errorCopyText={
-                  status.kind === "error"
-                    ? (status.copyText ?? status.message)
-                    : undefined
-                }
-              />
+              <div class="min-w-0 flex-1">
+                <StatusBar
+                  kind={status.kind}
+                  message={status.message}
+                  errorCopyText={
+                    status.kind === "error"
+                      ? (status.copyText ?? status.message)
+                      : undefined
+                  }
+                />
+              </div>
+              {hasStoredResults ? (
+                <button
+                  type="button"
+                  class="btn shrink-0 self-end px-2 py-0.5 text-[11px] text-muted sm:self-auto"
+                  onClick={handleClearStoredResults}
+                  title="Remove every saved result grid from localStorage (all query tabs)"
+                >
+                  Clear saved results
+                </button>
+              ) : null}
             </div>
 
             <div

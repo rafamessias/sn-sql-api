@@ -128,7 +128,8 @@ export const LogsPanel = () => {
       </div>
 
       <p class="font-mono text-[11px] leading-relaxed text-muted">
-        SQL runs, schema calls, and network errors. Entries are
+        SQL runs, schema calls, periodic JDBC health checks, and network errors.
+        Entries are
         kept in{" "}
         <code class="rounded border border-border bg-surface-2 px-1 py-0.5 text-[10px] text-info">
           localStorage

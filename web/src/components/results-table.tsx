@@ -7,6 +7,8 @@ import { cn } from "../lib/cn";
 
 const ROW_HEIGHT = 32;
 const MIN_COL_WIDTH = 160;
+/** Fixed track for the leading row-number column. */
+const ROW_NUM_COL = "minmax(2.75rem, 3.25rem)";
 
 type ResultsTableProps = {
   result: QueryResult;
@@ -92,7 +94,7 @@ export const ResultsTable = ({
     if (n === 0) return "";
     // `1fr` breaks intrinsic width when the grid is shrink-wrapped (wide tables
     // collapse to a single visible column). `auto` sizes each track from content.
-    return `repeat(${n}, minmax(${MIN_COL_WIDTH}px, auto))`;
+    return `${ROW_NUM_COL} repeat(${n}, minmax(${MIN_COL_WIDTH}px, auto))`;
   }, [result.columns.length]);
 
   const handleDownloadCsv = useCallback(() => {
@@ -208,6 +210,13 @@ export const ResultsTable = ({
             class="sticky top-0 z-20 grid border-b border-border bg-surface-2"
             style={{ gridTemplateColumns: gridTemplate }}
           >
+            <div
+              role="columnheader"
+              class="flex min-h-[2.5rem] items-center justify-end border-r border-border bg-surface-2 px-2 py-2 font-mono text-[12px] text-muted tabular-nums"
+              aria-label="Row number"
+            >
+              #
+            </div>
             {result.columns.map((column, index) => {
               const active = sort.columnIndex === index;
               return (
@@ -262,6 +271,13 @@ export const ResultsTable = ({
                         height: ROW_HEIGHT,
                       }}
                     >
+                      <div
+                        role="cell"
+                        class="flex items-center justify-end overflow-hidden border-r border-border/40 px-2 font-mono text-[12.5px] tabular-nums text-muted"
+                        aria-label={`Row ${(rowIndex + 1).toLocaleString()}`}
+                      >
+                        {(rowIndex + 1).toLocaleString()}
+                      </div>
                       {row.map((cell, columnIndex) => (
                         <div
                           role="cell"

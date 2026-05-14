@@ -45,17 +45,17 @@ def _spa_serves_index_html(path: str) -> bool:
 
 
 class _SpaStaticFiles(StaticFiles):
-    """`StaticFiles(html=True)` does not fall back to `index.html` for client-only paths (e.g. `/editor`).
+    """`StaticFiles(html=True)` must not serve bundled `404.html` for SPA tab paths (e.g. `/schema`).
 
-    Starlette only auto-serves `index.html` for **directory** URLs and optional `404.html`; missing
-    files otherwise return 404, which FastAPI surfaces as JSON — breaking SPA deep links on reload.
-
-    Unknown non-asset paths return the bundled `404.html` with status 404 when present.
+    Starlette auto-serves `index.html` only for **directory** URLs. For other missing paths with
+    ``html=True`` it returns ``404.html`` (status 404) when that file exists — a **Response**, not
+    an ``HTTPException``. A subclass that only catches exceptions therefore never rewrote tab URLs
+    to ``index.html``. Unknown paths still get ``404.html``; missing ``assets/*`` stays 404.
     """
 
     async def get_response(self, path: str, scope: Scope) -> Response:
         try:
-            return await super().get_response(path, scope)
+            response = await super().get_response(path, scope)
         except StarletteHTTPException as exc:
             if exc.status_code != 404 or not self.html:
                 raise
@@ -68,6 +68,15 @@ class _SpaStaticFiles(StaticFiles):
             if dist_404.is_file():
                 return FileResponse(dist_404, status_code=404)
             return await super().get_response("index.html", scope)
+
+        if (
+            self.html
+            and response.status_code == 404
+            and not (path == "assets" or path.startswith("assets/"))
+            and _spa_serves_index_html(path)
+        ):
+            return await super().get_response("index.html", scope)
+        return response
 
 
 _DIST_INDEX_MODULE_SCRIPT = re.compile(

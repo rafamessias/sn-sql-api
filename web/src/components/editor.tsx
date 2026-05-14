@@ -16,6 +16,10 @@ import {
   useState,
 } from "preact/hooks";
 import { SqlCodeEditor } from "./sql-code-editor";
+import {
+  clampEditorSectionMinHeightPx,
+  EDITOR_SECTION_MIN_HEIGHT_STEP,
+} from "../lib/editor-section-height";
 
 type EditorProps = {
   query: string;
@@ -28,6 +32,9 @@ type EditorProps = {
   onDownloadSql: () => void;
   onDownloadTxt: () => void;
   schemaTables?: readonly string[];
+  /** When set with `onAdjustEditorSectionHeight`, shows ± height controls (persisted by parent). */
+  editorSectionMinHeightPx?: number;
+  onAdjustEditorSectionHeight?: (deltaPx: number) => void;
 };
 
 function collectMatchRanges(
@@ -79,6 +86,8 @@ export const Editor = ({
   onDownloadSql,
   onDownloadTxt,
   schemaTables,
+  editorSectionMinHeightPx,
+  onAdjustEditorSectionHeight,
 }: EditorProps) => {
   const canShareQuery = query.trim().length > 0;
   const cmViewRef = useRef<EditorView | null>(null);
@@ -154,10 +163,23 @@ export const Editor = ({
   const hasFind = searchTerm.length > 0;
   const findNavDisabled = !hasFind || matchInfo.total === 0;
 
+  const heightControls =
+    editorSectionMinHeightPx != null && onAdjustEditorSectionHeight != null;
+  const canShrinkSection =
+    heightControls &&
+    clampEditorSectionMinHeightPx(
+      editorSectionMinHeightPx - EDITOR_SECTION_MIN_HEIGHT_STEP,
+    ) < editorSectionMinHeightPx;
+  const canGrowSection =
+    heightControls &&
+    clampEditorSectionMinHeightPx(
+      editorSectionMinHeightPx + EDITOR_SECTION_MIN_HEIGHT_STEP,
+    ) > editorSectionMinHeightPx;
+
   return (
-    <section class="flex min-w-0 flex-col gap-3">
-      <div class="min-w-0 max-w-full overflow-hidden rounded-lg border border-border">
-        <div class="flex flex-col gap-2 border-b border-border bg-surface-2 px-4 py-2 sm:flex-row sm:items-center sm:justify-between">
+    <section class="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
+      <div class="flex min-h-0 min-w-0 max-w-full flex-1 flex-col overflow-x-hidden rounded-lg border border-border">
+        <div class="flex shrink-0 flex-col gap-2 border-b border-border bg-surface-2 px-4 py-2 sm:flex-row sm:items-center sm:justify-between">
           <div class="flex min-w-0 items-center gap-2 font-mono text-[11px] text-subtle">
             <span class="h-2 w-2 shrink-0 rounded-full bg-accent" />
             <span class="text-accent">query.sql</span>
@@ -216,6 +238,35 @@ export const Editor = ({
             >
               {query.length} chars
             </span>
+            {heightControls ? (
+              <div
+                class="inline-flex shrink-0 items-stretch divide-x divide-border overflow-hidden rounded-md border border-border"
+                title="Adjust vertical space for the query editor (saved in this browser)"
+              >
+                <button
+                  type="button"
+                  class="btn rounded-none border-0 px-2.5 py-1 font-mono text-[14px] leading-none shadow-none ring-0"
+                  aria-label="Decrease query editor height"
+                  onClick={() =>
+                    onAdjustEditorSectionHeight(-EDITOR_SECTION_MIN_HEIGHT_STEP)
+                  }
+                  disabled={isRunning || !canShrinkSection}
+                >
+                  −
+                </button>
+                <button
+                  type="button"
+                  class="btn rounded-none border-0 px-2.5 py-1 font-mono text-[14px] leading-none shadow-none ring-0"
+                  aria-label="Increase query editor height"
+                  onClick={() =>
+                    onAdjustEditorSectionHeight(EDITOR_SECTION_MIN_HEIGHT_STEP)
+                  }
+                  disabled={isRunning || !canGrowSection}
+                >
+                  +
+                </button>
+              </div>
+            ) : null}
           </div>
         </div>
         <SqlCodeEditor
@@ -227,7 +278,7 @@ export const Editor = ({
           onViewUpdate={() => bumpSelectionTick()}
           onEditorMount={applySearchQuery}
         />
-        <div class="flex flex-wrap items-center gap-2 border-t border-border bg-surface-2 px-4 py-2">
+        <div class="flex shrink-0 flex-wrap items-center gap-2 border-t border-border bg-surface-2 px-4 py-2">
           <button
             type="button"
             class="btn btn-primary"

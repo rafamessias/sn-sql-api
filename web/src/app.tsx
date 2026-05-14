@@ -7,6 +7,7 @@ import { ConnectionsPanel } from "./components/connections-panel";
 import { EasterEgg } from "./components/easter-egg";
 import { Footer } from "./components/footer";
 import { LogsPanel } from "./components/logs-panel";
+import { useConnectionProbe } from "./hooks/use-connection-probe";
 import { useConnections } from "./hooks/use-connections";
 import { useConsoleTab } from "./hooks/use-console-tab";
 import { useEditorTabs } from "./hooks/use-editor-tabs";
@@ -65,6 +66,14 @@ export const App = () => {
     [activeId, active],
   );
 
+  const isServerDefault = activeId === SERVER_DEFAULT_ID || active === null;
+
+  const { connectionStatus, retryConnectionProbe } = useConnectionProbe({
+    connectionPayload,
+    displayLabel: connectionLabel,
+    isServerDefault,
+  });
+
   const handleTablesDiscovered = useCallback((names: readonly string[]) => {
     setSchemaTables([...names]);
   }, []);
@@ -88,6 +97,8 @@ export const App = () => {
         connections={connections}
         activeId={activeId}
         onActiveIdChange={setActiveId}
+        connectionStatus={connectionStatus}
+        onRetryConnectionProbe={retryConnectionProbe}
       />
 
       <Tabs
@@ -143,6 +154,8 @@ export const App = () => {
           <ConnectionsPanel
             connections={connections}
             activeId={activeId}
+            connectionProbeStatus={connectionStatus}
+            onRetryConnectionProbe={retryConnectionProbe}
             onSetActive={setActiveId}
             onCreate={createConnection}
             onUpdate={updateConnection}

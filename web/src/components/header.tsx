@@ -1,28 +1,22 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useCallback, useMemo, useRef } from "preact/hooks";
 import type { JSX } from "preact";
-import { checkConnection } from "../lib/api";
 import { cn } from "../lib/cn";
 import { EASTER_EGG_EVENT } from "./easter-egg";
+import type { ConnectionProbeStatus } from "../hooks/use-connection-probe";
 import {
   SERVER_DEFAULT_ID,
   connectionInstanceLabel,
-  toPayload,
-  type ConnectionPayload,
   type SavedConnection,
 } from "../lib/connections";
-
-type Status =
-  | { kind: "checking" }
-  | { kind: "ok"; instance: string | null }
-  | { kind: "error"; message: string };
 
 type HeaderProps = {
   connections: SavedConnection[];
   activeId: string;
   onActiveIdChange: (next: string) => void;
+  connectionStatus: ConnectionProbeStatus;
+  onRetryConnectionProbe: () => void;
 };
 
-const REFRESH_INTERVAL_MS = 30_000;
 const EASTER_EGG_CLICK_TARGET = 5;
 const EASTER_EGG_CLICK_WINDOW_MS = 2_500;
 
@@ -30,77 +24,15 @@ export const Header = ({
   connections,
   activeId,
   onActiveIdChange,
+  connectionStatus: status,
+  onRetryConnectionProbe,
 }: HeaderProps) => {
-  const [status, setStatus] = useState<Status>({ kind: "checking" });
-
   const active = useMemo(
     () => connections.find((entry) => entry.id === activeId) ?? null,
     [connections, activeId],
   );
 
   const isServerDefault = activeId === SERVER_DEFAULT_ID || active === null;
-
-  const connectionPayload: ConnectionPayload | undefined = useMemo(
-    () => (active ? toPayload(active) : undefined),
-    [active],
-  );
-
-  // What we *want* to show in the badge label — derived from the URL when
-  // a custom connection is active; from the probe response otherwise.
-  const localInstance = useMemo(
-    () => (active ? connectionInstanceLabel(active) : null),
-    [active],
-  );
-
-  useEffect(() => {
-    const controller = new AbortController();
-    let cancelled = false;
-
-    const probe = async () => {
-      setStatus({ kind: "checking" });
-      try {
-        const result = await checkConnection(
-          connectionPayload,
-          null,
-          controller.signal,
-        );
-        if (cancelled) return;
-        if (result.status === "ok") {
-          setStatus({
-            kind: "ok",
-            instance: localInstance ?? result.instance,
-          });
-        } else {
-          setStatus({
-            kind: "error",
-            message: result.error ?? "connection failed",
-          });
-        }
-      } catch (err) {
-        if (cancelled || controller.signal.aborted) return;
-        setStatus({
-          kind: "error",
-          message: err instanceof Error ? err.message : "unreachable",
-        });
-      }
-    };
-
-    void probe();
-    const id = window.setInterval(probe, REFRESH_INTERVAL_MS);
-
-    return () => {
-      cancelled = true;
-      controller.abort();
-      window.clearInterval(id);
-    };
-    // Trigger a fresh probe whenever the active connection changes.
-  }, [
-    connectionPayload?.url,
-    connectionPayload?.user,
-    connectionPayload?.password,
-    connectionPayload?.driver_class,
-    localInstance,
-  ]);
 
   const handleSelect: JSX.GenericEventHandler<HTMLSelectElement> = (event) => {
     onActiveIdChange((event.target as HTMLSelectElement).value);
@@ -142,6 +74,14 @@ export const Header = ({
   })();
 
   const title = status.kind === "error" ? status.message : undefined;
+
+  const handleRetryKeyDown: JSX.KeyboardEventHandler<HTMLButtonElement> = (
+    event,
+  ) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    onRetryConnectionProbe();
+  };
 
   return (
     <header class="sticky top-0 z-20 border-b border-border bg-bg">
@@ -191,6 +131,16 @@ export const Header = ({
             <span class={dotClass} />
             <span>{label}</span>
           </span>
+          {status.kind === "error" && (
+            <button
+              type="button"
+              class="btn shrink-0 py-1 text-[11px]"
+              onClick={onRetryConnectionProbe}
+              onKeyDown={handleRetryKeyDown}
+            >
+              Retry
+            </button>
+          )}
         </div>
       </div>
     </header>

@@ -68,22 +68,33 @@ const sqlHighlightStyle = HighlightStyle.define([
 const editorTheme = EditorView.theme(
   {
     "&": {
+      display: "flex",
+      flexDirection: "column",
       backgroundColor: "#010409",
       color: "#e6edf3",
       fontSize: "13px",
       minWidth: 0,
       width: "100%",
       maxWidth: "100%",
+      height: "100%",
+      minHeight: 0,
       fontFamily:
         "ui-monospace, SFMono-Regular, Menlo, Consolas, 'IBM Plex Mono', monospace",
     },
     ".cm-content": {
       caretColor: "#3fb950",
       padding: "16px 20px",
-      minHeight: "180px",
+      // Match parent (scroll area) height; lines extend below → vertical scroll on .cm-scroller
+      minHeight: "100%",
+      // Default CM uses flexShrink: 0, so longest line’s width becomes min-width of the whole
+      // page (~40k px). Shrink inside .cm-scroller and rely on overflow-x (same idea as lineWrapping).
+      minWidth: "0",
+      flexShrink: "1",
     },
     ".cm-scroller": {
       minWidth: 0,
+      minHeight: 0,
+      flex: 1,
       width: "100%",
       maxWidth: "100%",
       overflowX: "scroll",
@@ -317,7 +328,7 @@ export const SqlCodeEditor = ({
   return (
     <div
       ref={hostRef}
-      class="sql-cm-host contain-inline-size min-h-[180px] min-w-0 w-full max-w-full [&_.cm-editor]:outline-none [&_.cm-editor]:min-h-[180px]"
+      class="sql-cm-host contain-inline-size flex min-h-0 min-w-0 w-full max-w-full flex-1 flex-col [&_.cm-editor]:flex [&_.cm-editor]:min-h-0 [&_.cm-editor]:min-w-0 [&_.cm-editor]:flex-1 [&_.cm-editor]:flex-col [&_.cm-editor]:outline-none"
     />
   );
 };
