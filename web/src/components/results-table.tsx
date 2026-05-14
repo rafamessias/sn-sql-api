@@ -9,6 +9,14 @@ const ROW_HEIGHT = 32;
 const MIN_COL_WIDTH = 160;
 /** Fixed track for the leading row-number column. */
 const ROW_NUM_COL = "minmax(2.75rem, 3.25rem)";
+/** Minimum `ch` width for a data column (header + padding fudge). */
+const MIN_DATA_COL_CH = 12;
+/** Hard cap on measured string length when turning it into `ch` (pathological cells). */
+const MAX_CH_FOR_MIN = 400;
+/** Up to this many data columns, leftover row width is split with weighted `fr` so wide panels show more text. */
+const MAX_COLS_FOR_WEIGHTED_FR = 14;
+/** Cap on `fr` weight so one column cannot starve the rest. */
+const MAX_FR_WEIGHT = 200;
 
 type ResultsTableProps = {
   result: QueryResult;
@@ -20,6 +28,30 @@ const cellSearchText = (value: CellValue): string => {
   if (value === null || value === undefined) return "null";
   if (typeof value === "boolean") return value ? "true" : "false";
   return String(value);
+};
+
+const buildGridTemplate = (columns: string[], rows: CellValue[][]): string => {
+  if (columns.length === 0) return "";
+  const useFr = columns.length <= MAX_COLS_FOR_WEIGHTED_FR;
+
+  const tracks = columns.map((name, colIndex) => {
+    let maxChars = name.length;
+    for (const row of rows) {
+      const len = cellSearchText(row[colIndex] ?? null).length;
+      if (len > maxChars) maxChars = len;
+    }
+    const contentCh = Math.min(
+      Math.max(maxChars + 2, MIN_DATA_COL_CH),
+      MAX_CH_FOR_MIN,
+    );
+    const minTrack = `max(${MIN_COL_WIDTH}px, ${contentCh}ch)`;
+    if (useFr) {
+      const fr = Math.max(1, Math.min(maxChars + 2, MAX_FR_WEIGHT));
+      return `minmax(${minTrack}, ${fr}fr)`;
+    }
+    return `minmax(${minTrack}, ${contentCh}ch)`;
+  });
+  return `${ROW_NUM_COL} ${tracks.join(" ")}`;
 };
 
 const rowMatchesFilter = (row: CellValue[], q: string): boolean => {
@@ -89,13 +121,14 @@ export const ResultsTable = ({
     [filteredRows, startIndex, endIndex],
   );
 
-  const gridTemplate = useMemo(() => {
-    const n = result.columns.length;
-    if (n === 0) return "";
-    // `1fr` breaks intrinsic width when the grid is shrink-wrapped (wide tables
-    // collapse to a single visible column). `auto` sizes each track from content.
-    return `${ROW_NUM_COL} repeat(${n}, minmax(${MIN_COL_WIDTH}px, auto))`;
-  }, [result.columns.length]);
+  const gridTemplate = useMemo(
+    () => buildGridTemplate(result.columns, result.rows),
+    [result.columns, result.rows],
+  );
+
+  const useWeightedFr =
+    result.columns.length > 0 &&
+    result.columns.length <= MAX_COLS_FOR_WEIGHTED_FR;
 
   const handleDownloadCsv = useCallback(() => {
     const csv = tabularToCsv(result.columns, filteredRows);
@@ -207,7 +240,10 @@ export const ResultsTable = ({
         <div class="inline-block min-w-full align-top">
           <div
             role="row"
-            class="sticky top-0 z-20 grid border-b border-border bg-surface-2"
+            class={cn(
+              "sticky top-0 z-20 grid w-full border-b border-border bg-surface-2",
+              !useWeightedFr && "justify-start",
+            )}
             style={{ gridTemplateColumns: gridTemplate }}
           >
             <div
@@ -225,7 +261,7 @@ export const ResultsTable = ({
                   key={`${column}-${index}`}
                   onClick={() => toggleSort(index)}
                   class={cn(
-                    "flex min-h-[2.5rem] items-center justify-between gap-2 border-r border-border bg-surface-2 px-3 py-2 text-left font-mono text-[12px]",
+                    "flex min-h-[2.5rem] min-w-0 items-center justify-between gap-2 border-r border-border bg-surface-2 px-3 py-2 text-left font-mono text-[12px]",
                     "transition-colors hover:brightness-110 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent",
                     active ? "text-accent" : "text-text",
                   )}
@@ -237,7 +273,7 @@ export const ResultsTable = ({
                       : "none"
                   }
                 >
-                  <span class="truncate">{column}</span>
+                  <span class="min-w-0 flex-1 truncate">{column}</span>
                   <SortGlyph active={active} dir={active ? sort.direction : null} />
                 </button>
               );
@@ -262,7 +298,8 @@ export const ResultsTable = ({
                       role="row"
                       key={rowIndex}
                       class={cn(
-                        "grid border-b border-border/60 font-mono text-[12.5px] text-text transition-colors",
+                        "grid w-full border-b border-border/60 font-mono text-[12.5px] text-text transition-colors",
+                        !useWeightedFr && "justify-start",
                         rowIndex % 2 === 1 ? "bg-bg/40" : "bg-code",
                         "hover:bg-accent-dim/40",
                       )}
@@ -282,10 +319,10 @@ export const ResultsTable = ({
                         <div
                           role="cell"
                           key={columnIndex}
-                          class="flex items-center overflow-hidden border-r border-border/40 px-3"
+                          class="flex min-w-0 items-center overflow-hidden border-r border-border/40 px-3"
                           title={cell === null ? "NULL" : String(cell)}
                         >
-                          <span class="truncate">{renderCell(cell)}</span>
+                          <span class="min-w-0 truncate">{renderCell(cell)}</span>
                         </div>
                       ))}
                     </div>
