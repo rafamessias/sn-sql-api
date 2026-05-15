@@ -75,7 +75,7 @@ export const StatusBar = ({
               : "Faster browser round-trip on the last compare run (parallel JDBC vs Table API)"
           }
         >
-          {badge}
+          {badge === "Faster" ? `🚀 ${badge}` : badge}
         </span>
       ) : null}
       <span class={dotClass} aria-hidden="true" />

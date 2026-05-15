@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "preact/hooks";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "preact/hooks";
 import type { CellValue, QueryResult } from "../lib/api";
 import { tabularToCsv } from "../lib/csv";
 import { useSortedRows } from "../hooks/use-sorted-rows";
@@ -15,12 +15,24 @@ const MIN_COL_WIDTH = 160;
 const ROW_NUM_COL = "minmax(2.75rem, 3.25rem)";
 /** Minimum `ch` width for a data column (header + padding fudge). */
 const MIN_DATA_COL_CH = 12;
+/** If sampled max string length in a column is >= this, cap that column at `MAX_LONG_TEXT_COL_CH`. */
+const LONG_TEXT_CHAR_THRESHOLD = 80;
+/** Max `ch` width for long-text columns only (full value remains on `title` / CSV). */
+const MAX_LONG_TEXT_COL_CH = 64;
 /** Hard cap on measured string length when turning it into `ch` (pathological cells). */
 const MAX_CH_FOR_MIN = 400;
-/** Up to this many data columns, leftover row width is split with weighted `fr` so wide panels show more text. */
+/** Rows scanned when inferring column widths (full grid still sorts/filters all rows). */
+const WIDTH_SAMPLE_ROW_CAP = 200;
+/** Up to this many data columns, leftover row width may be split with weighted `fr` when the table fits the viewport. */
 const MAX_COLS_FOR_WEIGHTED_FR = 14;
 /** Cap on `fr` weight so one column cannot starve the rest. */
 const MAX_FR_WEIGHT = 200;
+/** Rough `ch` → px for monospace ~12px; over-estimate so we pick scroll mode before columns feel cramped. */
+const CH_TO_PX_EST = 8.1;
+/** Padding + borders fudge per data column when estimating intrinsic width (px). */
+const COL_WIDTH_PAD_EST = 34;
+/** Row `#` column width estimate (px). */
+const ROW_NUM_EST_PX = 56;
 
 type ResultsTableProps = {
   result: QueryResult;
@@ -42,26 +54,48 @@ const cellSearchText = (value: CellValue): string => {
   return String(value);
 };
 
-const buildGridTemplate = (columns: string[], rows: CellValue[][]): string => {
-  if (columns.length === 0) return "";
-  const useFr = columns.length <= MAX_COLS_FOR_WEIGHTED_FR;
+type ColumnWidthInfo = { trackCh: number; frWeight: number };
 
-  const tracks = columns.map((name, colIndex) => {
+const computeColumnWidthInfo = (
+  columns: string[],
+  rows: CellValue[][],
+): ColumnWidthInfo[] => {
+  const sample = rows.length > WIDTH_SAMPLE_ROW_CAP ? rows.slice(0, WIDTH_SAMPLE_ROW_CAP) : rows;
+  return columns.map((name, colIndex) => {
     let maxChars = name.length;
-    for (const row of rows) {
+    for (const row of sample) {
       const len = cellSearchText(row[colIndex] ?? null).length;
       if (len > maxChars) maxChars = len;
     }
-    const contentCh = Math.min(
+    const paddedCh = Math.min(
       Math.max(maxChars + 2, MIN_DATA_COL_CH),
       MAX_CH_FOR_MIN,
     );
-    const minTrack = `max(${MIN_COL_WIDTH}px, ${contentCh}ch)`;
-    if (useFr) {
-      const fr = Math.max(1, Math.min(maxChars + 2, MAX_FR_WEIGHT));
-      return `minmax(${minTrack}, ${fr}fr)`;
+    const isLongTextCol = maxChars >= LONG_TEXT_CHAR_THRESHOLD;
+    const trackCh = isLongTextCol
+      ? Math.max(MIN_DATA_COL_CH, Math.min(paddedCh, MAX_LONG_TEXT_COL_CH))
+      : paddedCh;
+    const frWeight = Math.max(1, Math.min(maxChars + 2, MAX_FR_WEIGHT));
+    return { trackCh, frWeight };
+  });
+};
+
+const estimateIntrinsicMinWidthPx = (infos: ColumnWidthInfo[]): number => {
+  let sum = ROW_NUM_EST_PX;
+  for (const { trackCh } of infos) {
+    sum += Math.max(MIN_COL_WIDTH, trackCh * CH_TO_PX_EST + COL_WIDTH_PAD_EST);
+  }
+  return Math.ceil(sum);
+};
+
+const buildGridTemplate = (infos: ColumnWidthInfo[], mode: "stretch" | "scroll"): string => {
+  if (infos.length === 0) return "";
+  const tracks = infos.map(({ trackCh, frWeight }) => {
+    const minTrack = `max(${MIN_COL_WIDTH}px, ${trackCh}ch)`;
+    if (mode === "stretch") {
+      return `minmax(${minTrack}, ${frWeight}fr)`;
     }
-    return `minmax(${minTrack}, ${contentCh}ch)`;
+    return minTrack;
   });
   return `${ROW_NUM_COL} ${tracks.join(" ")}`;
 };
@@ -148,14 +182,50 @@ export const ResultsTable = ({
     [filteredRows, startIndex, endIndex],
   );
 
-  const gridTemplate = useMemo(
-    () => buildGridTemplate(result.columns, result.rows),
+  const columnWidthInfo = useMemo(
+    () => computeColumnWidthInfo(result.columns, result.rows),
     [result.columns, result.rows],
   );
 
-  const useWeightedFr =
-    result.columns.length > 0 &&
-    result.columns.length <= MAX_COLS_FOR_WEIGHTED_FR;
+  const intrinsicMinWidthPx = useMemo(
+    () => estimateIntrinsicMinWidthPx(columnWidthInfo),
+    [columnWidthInfo],
+  );
+
+  const canUseFrLayout =
+    result.columns.length > 0 && result.columns.length <= MAX_COLS_FOR_WEIGHTED_FR;
+
+  const [stretchToViewport, setStretchToViewport] = useState(true);
+
+  useLayoutEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    const update = () => {
+      const w = el.clientWidth;
+      if (!canUseFrLayout) {
+        setStretchToViewport(false);
+        return;
+      }
+      setStretchToViewport(w >= intrinsicMinWidthPx - 1);
+    };
+
+    update();
+    const ro = new ResizeObserver(() => update());
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [containerRef, intrinsicMinWidthPx, canUseFrLayout, result.columns]);
+
+  const gridTemplate = useMemo(
+    () =>
+      buildGridTemplate(
+        columnWidthInfo,
+        canUseFrLayout && stretchToViewport ? "stretch" : "scroll",
+      ),
+    [columnWidthInfo, canUseFrLayout, stretchToViewport],
+  );
+
+  const useFrLayout = canUseFrLayout && stretchToViewport;
 
   const handleDownloadCsv = useCallback(() => {
     const csv = tabularToCsv(result.columns, filteredRows);
@@ -271,18 +341,19 @@ export const ResultsTable = ({
             : undefined
         }
       >
-        <div class="inline-block min-w-full align-top">
+        <div class={cn("inline-block align-top", useFrLayout ? "min-w-full" : "min-w-full w-max")}>
           <div
             role="row"
             class={cn(
-              "sticky top-0 z-20 grid w-full border-b border-border bg-surface-2",
-              !useWeightedFr && "justify-start",
+              // Same font-size as data rows so `ch` in `gridTemplateColumns` resolves identically (header/body alignment).
+              "sticky top-0 z-20 grid border-b border-border bg-surface-2 font-mono text-[12.5px]",
+              useFrLayout ? "w-full" : "w-max justify-start",
             )}
             style={{ gridTemplateColumns: gridTemplate }}
           >
             <div
               role="columnheader"
-              class="flex min-h-[2.5rem] items-center justify-end border-r border-border bg-surface-2 px-2 py-2 font-mono text-[12px] text-muted tabular-nums"
+              class="flex min-h-[2.5rem] items-center justify-end border-r border-border bg-surface-2 px-2 py-2 text-muted tabular-nums"
               aria-label="Row number"
             >
               #
@@ -295,7 +366,7 @@ export const ResultsTable = ({
                   key={`${column}-${index}`}
                   onClick={() => toggleSort(index)}
                   class={cn(
-                    "flex min-h-[2.5rem] min-w-0 items-center justify-between gap-2 border-r border-border bg-surface-2 px-3 py-2 text-left font-mono text-[12px]",
+                    "flex min-h-[2.5rem] min-w-0 items-center justify-between gap-2 border-r border-border bg-surface-2 px-3 py-2 text-left",
                     "transition-colors hover:brightness-110 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent",
                     active ? "text-accent" : "text-text",
                   )}
@@ -323,8 +394,8 @@ export const ResultsTable = ({
               No rows match “{filterText.trim()}”. Clear the search to see all rows.
             </div>
           ) : (
-            <div class="relative z-0" style={{ height: totalHeight }}>
-              <div style={{ transform: `translateY(${paddingTop}px)` }}>
+            <div class="relative z-0 w-max min-w-full" style={{ height: totalHeight }}>
+              <div class="w-max min-w-full" style={{ transform: `translateY(${paddingTop}px)` }}>
                 {visible.map((row, offset) => {
                   const rowIndex = startIndex + offset;
                   return (
@@ -332,8 +403,8 @@ export const ResultsTable = ({
                       role="row"
                       key={rowIndex}
                       class={cn(
-                        "grid w-full border-b border-border/60 font-mono text-[12.5px] text-text transition-colors",
-                        !useWeightedFr && "justify-start",
+                        "grid border-b border-border/60 font-mono text-[12.5px] text-text transition-colors",
+                        useFrLayout ? "w-full" : "w-max justify-start",
                         rowIndex % 2 === 1 ? "bg-bg/40" : "bg-code",
                         "hover:bg-accent-dim/40",
                       )}

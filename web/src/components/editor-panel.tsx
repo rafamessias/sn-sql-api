@@ -11,6 +11,7 @@ import { ResultsTable } from "./results-table";
 import { StatusBar } from "./status-bar";
 import { isAbortError, runQuery, runTableApiRecords, type QueryResult, type TableApiRecordsResponse } from "../lib/api";
 import { cn } from "../lib/cn";
+import { copyTextToClipboard } from "../lib/copy-text";
 import {
   downloadTextFile,
   sanitizeDownloadStem,
@@ -39,6 +40,7 @@ import {
   defaultTableApiForm,
   type TableApiFormState,
 } from "../lib/table-api-form";
+import { showToast } from "../lib/toast";
 import { TableApiComparePanel } from "./table-api-compare-panel";
 
 type Status =
@@ -384,12 +386,9 @@ export const EditorPanel = ({
     [activeId],
   );
 
-  const handleTranslateNotice = useCallback(
-    (message: string) => {
-      setActiveStatus({ kind: "ok", message });
-    },
-    [setActiveStatus],
-  );
+  const handleTableApiTranslateNotice = useCallback((message: string) => {
+    showToast(message, "ok");
+  }, []);
 
   const buildTableApiRequestBody = useCallback(
     (form: TableApiFormState): Parameters<typeof runTableApiRecords>[0] => {
@@ -808,17 +807,19 @@ export const EditorPanel = ({
   const handleCopySql = useCallback(async () => {
     const text = activeTab.query;
     if (text.trim().length === 0) return;
-    try {
-      await navigator.clipboard.writeText(text);
-      setActiveStatus({
-        kind: "ok",
-        message: `Copied query to clipboard (${text.length.toLocaleString()} chars).`,
-      });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      setActiveStatus({ kind: "error", message: `Copy failed: ${message}` });
+    const ok = await copyTextToClipboard(text);
+    if (ok) {
+      showToast(
+        `Copied query to clipboard (${text.length.toLocaleString()} chars).`,
+        "ok",
+      );
+    } else {
+      showToast(
+        "Could not copy to clipboard. Use HTTPS, allow clipboard access, or copy manually.",
+        "error",
+      );
     }
-  }, [activeTab.query, setActiveStatus]);
+  }, [activeTab.query]);
 
   const handleDownloadTxt = useCallback(() => {
     const text = activeTab.query;
@@ -826,15 +827,12 @@ export const EditorPanel = ({
     const stem = sanitizeDownloadStem(activeTab.name);
     try {
       downloadTextFile(`${stem}.txt`, text);
-      setActiveStatus({
-        kind: "ok",
-        message: `Downloaded ${stem}.txt.`,
-      });
+      showToast(`Downloaded ${stem}.txt.`, "ok");
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      setActiveStatus({ kind: "error", message: `Download failed: ${message}` });
+      showToast(`Download failed: ${message}`, "error");
     }
-  }, [activeTab.name, activeTab.query, setActiveStatus]);
+  }, [activeTab.name, activeTab.query]);
 
   // When a tab is closed, drop its runtime state to free memory.
   const handleCloseTab = useCallback(
@@ -977,6 +975,7 @@ export const EditorPanel = ({
                 <TableApiComparePanel
                   sqlText={activeTab.query}
                   form={tableApiForm}
+                  connectionPayload={connectionPayload}
                   onFormChange={(next) =>
                     setTableApiFormByTab((prev) => ({
                       ...prev,
@@ -985,7 +984,8 @@ export const EditorPanel = ({
                   }
                   onRunRest={handleRunTableApi}
                   onRunBoth={handleRunBoth}
-                  onTranslateNotice={handleTranslateNotice}
+                  onTranslateNotice={handleTableApiTranslateNotice}
+                  onApplyApproximateSqlToJdbc={onActiveQueryChange}
                   restRunning={tableApiBusy}
                   jdbcRunning={status.kind === "running"}
                   disableRestRun={false}
@@ -999,12 +999,7 @@ export const EditorPanel = ({
                   compareMode ? "xl:grid-cols-2" : "grid-cols-1",
                 )}
               >
-                <div class="flex min-w-0 flex-col gap-1">
-                  {compareMode ? (
-                    <span class="font-mono text-[10px] uppercase tracking-wide text-subtle">
-                      JDBC
-                    </span>
-                  ) : null}
+                <div class="flex min-w-0 flex-col">
                   <StatusBar
                     kind={status.kind}
                     message={status.message}
@@ -1018,10 +1013,7 @@ export const EditorPanel = ({
                   />
                 </div>
                 {compareMode ? (
-                  <div class="flex min-w-0 flex-col gap-1">
-                    <span class="font-mono text-[10px] uppercase tracking-wide text-subtle">
-                      Table API
-                    </span>
+                  <div class="flex min-w-0 flex-col">
                     <StatusBar
                       kind={tableApiStatus.kind}
                       message={tableApiStatus.message}
@@ -1070,6 +1062,7 @@ export const EditorPanel = ({
                 <TableApiComparePanel
                   sqlText={activeTab.query}
                   form={tableApiForm}
+                  connectionPayload={connectionPayload}
                   onFormChange={(next) =>
                     setTableApiFormByTab((prev) => ({
                       ...prev,
@@ -1078,7 +1071,8 @@ export const EditorPanel = ({
                   }
                   onRunRest={handleRunTableApi}
                   onRunBoth={handleRunBoth}
-                  onTranslateNotice={handleTranslateNotice}
+                  onTranslateNotice={handleTableApiTranslateNotice}
+                  onApplyApproximateSqlToJdbc={onActiveQueryChange}
                   restRunning={tableApiBusy}
                   jdbcRunning={status.kind === "running"}
                   disableRestRun={false}
@@ -1099,12 +1093,7 @@ export const EditorPanel = ({
                   compareMode ? "xl:grid-cols-2" : "grid-cols-1",
                 )}
               >
-                <div class="flex min-w-0 flex-col gap-1">
-                  {compareMode ? (
-                    <span class="font-mono text-[10px] uppercase tracking-wide text-subtle">
-                      JDBC
-                    </span>
-                  ) : null}
+                <div class="flex min-w-0 flex-col">
                   <StatusBar
                     kind={status.kind}
                     message={status.message}
@@ -1118,10 +1107,7 @@ export const EditorPanel = ({
                   />
                 </div>
                 {compareMode ? (
-                  <div class="flex min-w-0 flex-col gap-1">
-                    <span class="font-mono text-[10px] uppercase tracking-wide text-subtle">
-                      Table API
-                    </span>
+                  <div class="flex min-w-0 flex-col">
                     <StatusBar
                       kind={tableApiStatus.kind}
                       message={tableApiStatus.message}
@@ -1154,11 +1140,6 @@ export const EditorPanel = ({
               <div
                 class="pointer-events-auto absolute left-1/2 top-0 z-50 flex h-full min-h-0 w-[calc(100vw-2rem)] -translate-x-1/2 flex-col overflow-hidden rounded-lg bg-surface shadow-2xl ring-1 ring-border sm:w-[calc(100vw-4rem)]"
               >
-                <div class="shrink-0 px-4 pt-3">
-                  <p class="font-mono text-[10px] uppercase tracking-wide text-subtle">
-                    JDBC
-                  </p>
-                </div>
                 <div class="min-h-0 flex-1">
                   <ResultsTable
                     result={result!}
@@ -1170,21 +1151,11 @@ export const EditorPanel = ({
               </div>
             ) : isDualJdbcRest ? (
               <div class="grid min-h-0 min-w-0 flex-1 items-start gap-3 xl:grid-cols-2">
-                <div class="flex min-h-0 w-full min-w-0 flex-col gap-1">
-                  <p class="shrink-0 font-mono text-[10px] uppercase tracking-wide text-subtle">
-                    JDBC
-                  </p>
-                  <div class="min-h-0 w-full">
-                    <ResultsTable result={result!} resultsExpanded={false} />
-                  </div>
+                <div class="min-h-0 w-full min-w-0">
+                  <ResultsTable result={result!} resultsExpanded={false} />
                 </div>
-                <div class="flex min-h-0 w-full min-w-0 flex-col gap-1">
-                  <p class="shrink-0 font-mono text-[10px] uppercase tracking-wide text-subtle">
-                    Table API
-                  </p>
-                  <div class="min-h-0 w-full">
-                    <ResultsTable result={tableApiResult!} resultsExpanded={false} />
-                  </div>
+                <div class="min-h-0 w-full min-w-0">
+                  <ResultsTable result={tableApiResult!} resultsExpanded={false} />
                 </div>
               </div>
             ) : result ? (
@@ -1201,13 +1172,8 @@ export const EditorPanel = ({
                 />
               </div>
             ) : compareMode && tableApiResult ? (
-              <div class="flex min-h-0 min-w-0 flex-1 flex-col gap-1">
-                <p class="shrink-0 font-mono text-[10px] uppercase tracking-wide text-subtle">
-                  Table API
-                </p>
-                <div class="min-h-0 w-full">
-                  <ResultsTable result={tableApiResult} resultsExpanded={false} />
-                </div>
+              <div class="min-h-0 w-full">
+                <ResultsTable result={tableApiResult} resultsExpanded={false} />
               </div>
             ) : null}
           </>

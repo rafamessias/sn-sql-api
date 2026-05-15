@@ -1,20 +1,28 @@
 import { useCallback } from "preact/hooks";
+import { buildServiceNowTableApiGetUrl } from "../lib/build-servicenow-table-api-get-url";
+import { copyTextToClipboard } from "../lib/copy-text";
+import type { ConnectionPayload } from "../lib/connections";
 import { sqlToSysparm, sysparmToSql } from "../lib/sql-sysparm-translate";
+import { showToast } from "../lib/toast";
 import type { TableApiFormState } from "../lib/table-api-form";
 
 export type { TableApiFormState } from "../lib/table-api-form";
 export { defaultTableApiForm } from "../lib/table-api-form";
 
 const TABLE_API_DOCS =
-  "https://www.servicenow.com/docs/csh?topicname=c_TableAPI.html&version=latest";
+  "https://www.servicenow.com/docs/r/api-reference/rest-apis/c_TableAPI.html";
 
 type TableApiComparePanelProps = {
   sqlText: string;
   form: TableApiFormState;
+  /** Used to build a full ``https://instance/...`` GET URL when a saved connection is active. */
+  connectionPayload: ConnectionPayload | undefined;
   onFormChange: (next: TableApiFormState) => void;
   onRunRest: () => void;
   onRunBoth: () => void;
   onTranslateNotice: (message: string) => void;
+  /** Replace JDBC editor contents with approximate SQL from sysparms. */
+  onApplyApproximateSqlToJdbc: (sql: string) => void;
   restRunning: boolean;
   jdbcRunning: boolean;
   disableRestRun: boolean;
@@ -23,10 +31,12 @@ type TableApiComparePanelProps = {
 export const TableApiComparePanel = ({
   sqlText,
   form,
+  connectionPayload,
   onFormChange,
   onRunRest,
   onRunBoth,
   onTranslateNotice,
+  onApplyApproximateSqlToJdbc,
   restRunning,
   jdbcRunning,
   disableRestRun,
@@ -59,23 +69,47 @@ export const TableApiComparePanel = ({
     onTranslateNotice(`Mapped SQL to Table API fields.${extra}`);
   }, [form, onFormChange, onTranslateNotice, sqlText]);
 
-  const handleSyncToSql = useCallback(() => {
+  const handleSyncToSql = useCallback(async () => {
     const lim = Number.parseInt(form.sysparm_limit.trim(), 10);
-    const { sql, warnings } = sysparmToSql({
+    const { ok, sql, warnings } = sysparmToSql({
       table: form.table,
       sysparm_query: form.sysparm_query,
       sysparm_fields: form.sysparm_fields.trim() || null,
       sysparm_limit: Number.isFinite(lim) && lim > 0 ? lim : null,
     });
-    if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
-      void navigator.clipboard.writeText(sql);
-      onTranslateNotice(
-        warnings.length > 0
-          ? `Copied approximate SQL. ${warnings.join(" · ")}`
-          : "Copied approximate SQL to the clipboard.",
+    if (!ok) {
+      showToast(warnings[0] ?? "Could not build SQL from sysparms.", "error");
+      return;
+    }
+    onApplyApproximateSqlToJdbc(sql);
+    const copied = await copyTextToClipboard(sql);
+    const base = "Approximate SQL placed in the JDBC editor.";
+    const clip = copied ? " Also copied to clipboard." : "";
+    const warnExtra =
+      warnings.length > 0 ? ` ${warnings.join(" · ")}` : "";
+    showToast(`${base}${clip}${warnExtra}`, "ok");
+  }, [form, onApplyApproximateSqlToJdbc]);
+
+  const handleCopyTableApiGetUrl = useCallback(async () => {
+    const built = buildServiceNowTableApiGetUrl(connectionPayload, form);
+    if (!built) {
+      return;
+    }
+    const ok = await copyTextToClipboard(built.url);
+    if (ok) {
+      showToast(
+        built.hadOrigin
+          ? "Copied full ServiceNow Table API GET URL."
+          : "Copied path and query — prefix with your instance URL if needed (saved connection gives a full https URL).",
+        "ok",
+      );
+    } else {
+      showToast(
+        "Could not copy URL to clipboard. Use HTTPS or allow clipboard access.",
+        "error",
       );
     }
-  }, [form, onTranslateNotice]);
+  }, [connectionPayload, form]);
 
   const busy = restRunning || jdbcRunning;
 
@@ -111,11 +145,11 @@ export const TableApiComparePanel = ({
             <button
               type="button"
               class="btn px-2 py-1 text-[11px]"
-              title="Build approximate SELECT and copy to clipboard"
-              onClick={handleSyncToSql}
+              title="Build approximate SELECT, put it in the JDBC editor, and copy when the clipboard is available"
+              onClick={() => void handleSyncToSql()}
               disabled={busy || !form.table.trim()}
             >
-              sysparm → SQL (copy)
+              sysparm → SQL
             </button>
           </div>
         </div>
@@ -271,6 +305,15 @@ export const TableApiComparePanel = ({
             }
           >
             Run both (compare)
+          </button>
+          <button
+            type="button"
+            class="btn"
+            title="Copy GET /api/now/table/{table}?… (full https URL when a saved connection is selected; Basic auth not included)"
+            onClick={() => void handleCopyTableApiGetUrl()}
+            disabled={busy || !form.table.trim()}
+          >
+            Copy URL
           </button>
         </div>
       </div>

@@ -7,6 +7,7 @@ import { ConnectionsPanel } from "./components/connections-panel";
 import { EasterEgg } from "./components/easter-egg";
 import { Footer } from "./components/footer";
 import { LogsPanel } from "./components/logs-panel";
+import { ToastHost } from "./components/toast-host";
 import { useConnectionProbe } from "./hooks/use-connection-probe";
 import { useConnections } from "./hooks/use-connections";
 import { useConsoleTab } from "./hooks/use-console-tab";
@@ -175,6 +176,7 @@ export const App = () => {
 
       <Footer />
       <EasterEgg />
+      <ToastHost />
     </div>
   );
 };
