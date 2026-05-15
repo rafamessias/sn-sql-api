@@ -10,6 +10,8 @@ export type EditorTab = {
   lastTableApiInstanceMs?: number;
   /** When true, show split JDBC + Table API editor for this tab (persisted). */
   compareTableApi?: boolean;
+  /** When true, JDBC runs request counts/timing only (no row grid). */
+  timingOnly?: boolean;
 };
 
 export const STORAGE_KEYS = {
@@ -73,6 +75,9 @@ export const sanitizeTabs = (raw: unknown): EditorTab[] | null => {
     const compareTableApi =
       cr === true ? true : cr === false ? false : undefined;
 
+    const to = obj.timingOnly;
+    const timingOnly = to === true ? true : to === false ? false : undefined;
+
     const tab: EditorTab = { id, name, query };
     if (lastRunDurationMs !== undefined) {
       tab.lastRunDurationMs = lastRunDurationMs;
@@ -86,6 +91,9 @@ export const sanitizeTabs = (raw: unknown): EditorTab[] | null => {
     }
     if (compareTableApi !== undefined) {
       tab.compareTableApi = compareTableApi;
+    }
+    if (timingOnly !== undefined) {
+      tab.timingOnly = timingOnly;
     }
     out.push(tab);
   }

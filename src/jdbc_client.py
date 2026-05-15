@@ -1,3 +1,5 @@
+import re
+import time
 from collections import defaultdict
 from collections.abc import Sequence
 from contextlib import contextmanager
@@ -91,32 +93,188 @@ def _sanitize_query(query: str) -> str:
     return cleaned
 
 
+_LIMIT_OFFSET_TAIL_RE = re.compile(
+    r"\s+LIMIT\s+(\d+)\s*(?:OFFSET\s+(\d+))?\s*$",
+    re.IGNORECASE,
+)
+_OFFSET_LIMIT_TAIL_RE = re.compile(
+    r"\s+OFFSET\s+(\d+)\s+LIMIT\s+(\d+)\s*$",
+    re.IGNORECASE,
+)
+
+
+def _parse_trailing_limit_offset(cleaned_query: str) -> tuple[str, int | None, int]:
+    m = _LIMIT_OFFSET_TAIL_RE.search(cleaned_query)
+    if m:
+        base = cleaned_query[: m.start()].rstrip()
+        return base, int(m.group(1)), int(m.group(2) or 0)
+
+    m = _OFFSET_LIMIT_TAIL_RE.search(cleaned_query)
+    if m:
+        base = cleaned_query[: m.start()].rstrip()
+        return base, int(m.group(2)), int(m.group(1))
+
+    return cleaned_query, None, 0
+
+
+def _page_sql(base_sql: str, limit: int, offset: int) -> str:
+    wrapped = f"SELECT * FROM ({base_sql}) sn_sql_api_page"
+    return f"{wrapped} LIMIT {limit} OFFSET {offset}"
+
+
+def _column_tail(name: str) -> str:
+    return name.strip().lower().rsplit(".", 1)[-1]
+
+
+def _align_page_rows(
+    first_columns: list[str],
+    page_columns: list[str],
+    page_rows: list[list[Any]],
+) -> list[list[Any]]:
+    if not page_rows:
+        return page_rows
+    width = len(first_columns)
+    if len(page_columns) == width:
+        return page_rows
+
+    index_map: list[int] = []
+    for fc in first_columns:
+        tail = _column_tail(fc)
+        match = next(
+            (i for i, pc in enumerate(page_columns) if _column_tail(pc) == tail),
+            None,
+        )
+        if match is None:
+            index_map = []
+            break
+        index_map.append(match)
+
+    if len(index_map) == width:
+        return [[row[i] for i in index_map] for row in page_rows]
+
+    if all(len(row) >= width for row in page_rows):
+        return [row[:width] for row in page_rows]
+
+    raise RuntimeError(
+        "Could not align JDBC page columns to the first page "
+        f"(expected {width}, page has {len(page_columns)})."
+    )
+
+
+def _execute_page(
+    conn: Any,
+    page_sql: str,
+    parameters: Sequence[Any] | None,
+) -> tuple[list[str], list[list[Any]]]:
+    curs = conn.cursor()
+    try:
+        if parameters:
+            curs.execute(page_sql, parameters)
+        else:
+            curs.execute(page_sql)
+        columns = [description[0] for description in (curs.description or [])]
+        return columns, [list(row) for row in curs.fetchall()]
+    finally:
+        curs.close()
+
+
+def _fetch_all_rows(
+    conn: Any,
+    base_sql: str,
+    parameters: Sequence[Any] | None,
+    *,
+    user_limit: int | None,
+    user_offset: int,
+    page_size: int,
+) -> tuple[list[str], list[list[Any]]]:
+    """Transparent multi-request fetch — ServiceNow JDBC caps rows per execute."""
+
+    columns: list[str] | None = None
+    all_rows: list[list[Any]] = []
+    offset = user_offset
+    remaining = user_limit
+    pages = 0
+    max_pages = (
+        10_000
+        if user_limit is None
+        else (user_limit + page_size - 1) // page_size + 2
+    )
+
+    while pages < max_pages:
+        pages += 1
+        if remaining is not None and remaining <= 0:
+            break
+
+        chunk_limit = page_size if remaining is None else min(page_size, remaining)
+        page_sql = _page_sql(base_sql, chunk_limit, offset)
+        page_columns, page_rows = _execute_page(conn, page_sql, parameters)
+
+        if columns is None:
+            columns = page_columns
+        else:
+            page_rows = _align_page_rows(columns, page_columns, page_rows)
+
+        if not page_rows:
+            break
+
+        all_rows.extend(page_rows)
+
+        if user_limit is not None and len(all_rows) >= user_limit:
+            if len(all_rows) > user_limit:
+                del all_rows[user_limit:]
+            break
+
+        offset += len(page_rows)
+        if remaining is not None:
+            remaining -= len(page_rows)
+
+    return columns or [], all_rows
+
+
 def run_query(
     query: str,
     parameters: Sequence[Any] | None = None,
     override: ConnectionOverride | None = None,
+    *,
+    timing_only: bool = False,
 ) -> dict[str, Any]:
     cleaned_query = _sanitize_query(query)
     if not cleaned_query:
         raise ValueError("Query is empty after stripping terminators.")
 
-    with get_connection(override) as conn:
-        curs = conn.cursor()
-        try:
-            if parameters:
-                curs.execute(cleaned_query, parameters)
-            else:
-                curs.execute(cleaned_query)
+    started = time.monotonic()
 
-            columns = [description[0] for description in (curs.description or [])]
-            rows = curs.fetchall()
-        finally:
-            curs.close()
+    with get_connection(override) as conn:
+        base_sql, user_limit, user_offset = _parse_trailing_limit_offset(cleaned_query)
+        columns, rows = _fetch_all_rows(
+            conn,
+            base_sql,
+            parameters,
+            user_limit=user_limit,
+            user_offset=user_offset,
+            page_size=settings.sn_jdbc_page_size,
+        )
+
+    if timing_only:
+        row_count = len(rows)
+        elapsed_ms = int((time.monotonic() - started) * 1000)
+        return {
+            "columns": [],
+            "rows": [],
+            "row_count": row_count,
+            "timing_only": True,
+            "duration_ms": elapsed_ms,
+            "timing_note": (
+                f"Full JDBC fetch: {row_count:,} row(s); "
+                "row data not sent to the browser."
+            ),
+        }
 
     return {
         "columns": columns,
-        "rows": [list(row) for row in rows],
+        "rows": rows,
         "row_count": len(rows),
+        "timing_only": False,
     }
 
 

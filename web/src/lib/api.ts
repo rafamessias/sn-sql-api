@@ -1,5 +1,6 @@
 import { appendAppLog } from "./app-logs";
 import type { ConnectionPayload } from "./connections";
+import { parseJsonResponse } from "./parse-json-response";
 
 export type CellValue = string | number | boolean | null;
 
@@ -7,6 +8,9 @@ export type QueryResult = {
   columns: string[];
   rows: CellValue[][];
   row_count: number;
+  timing_only?: boolean;
+  duration_ms?: number;
+  timing_note?: string | null;
 };
 
 export type TableApiRecordsRequest = {
@@ -21,6 +25,7 @@ export type TableApiRecordsRequest = {
   sysparm_view?: string | null;
   sysparm_query_no_domain?: boolean | null;
   sysparm_suppress_pagination_header?: boolean | null;
+  timing_only?: boolean;
 };
 
 export type TableApiRecordsResponse = QueryResult & {
@@ -140,7 +145,7 @@ const post = async <T>(
   if (!response.ok) {
     throw new Error(await extractDetail(response));
   }
-  return (await response.json()) as T;
+  return parseJsonResponse<T>(response);
 };
 
 export const runTableApiRecords = async (
@@ -178,6 +183,7 @@ export const runTableApiRecords = async (
     payload.sysparm_suppress_pagination_header =
       body.sysparm_suppress_pagination_header;
   }
+  if (body.timing_only) payload.timing_only = true;
   try {
     const result = await post<TableApiRecordsResponse>(
       "/table-api/records",
@@ -210,6 +216,7 @@ export const runQuery = async (
   connection: ConnectionPayload | undefined,
   apiKey: string | null,
   signal?: AbortSignal,
+  options?: { timingOnly?: boolean },
 ): Promise<QueryResult> => {
   const t0 = performance.now();
   const detail = previewSql(query);
@@ -220,12 +227,11 @@ export const runQuery = async (
     detail,
   });
   try {
-    const result = await post<QueryResult>(
-      "/query",
-      connection ? { query, connection } : { query },
-      apiKey,
-      signal,
-    );
+    const body: Record<string, unknown> = connection
+      ? { query, connection }
+      : { query };
+    if (options?.timingOnly) body.timing_only = true;
+    const result = await post<QueryResult>("/query", body, apiKey, signal);
     appendAppLog({
       level: "success",
       category: "Query",

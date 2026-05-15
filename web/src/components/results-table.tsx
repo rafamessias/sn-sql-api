@@ -10,29 +10,32 @@ const ROW_HEIGHT = 32;
 const SCROLL_GRID_HEADER_REM = 2.5;
 /** Default cap on visible data rows before vertical scroll (non-expanded). */
 export const RESULTS_TABLE_DEFAULT_MAX_DATA_ROWS = 25;
-const MIN_COL_WIDTH = 160;
-/** Fixed track for the leading row-number column. */
-const ROW_NUM_COL = "minmax(2.75rem, 3.25rem)";
-/** Minimum `ch` width for a data column (header + padding fudge). */
-const MIN_DATA_COL_CH = 12;
-/** If sampled max string length in a column is >= this, cap that column at `MAX_LONG_TEXT_COL_CH`. */
-const LONG_TEXT_CHAR_THRESHOLD = 80;
-/** Max `ch` width for long-text columns only (full value remains on `title` / CSV). */
-const MAX_LONG_TEXT_COL_CH = 64;
+/** Minimum `ch` width for a data column (header + cell padding). */
+const MIN_DATA_COL_CH = 6;
+/** Extra `ch` beyond longest sampled string (padding + sort icon in header). */
+const COL_WIDTH_PAD_CH = 3;
+/** Sampled max length at or above this → treat column as long-text (truncate in cell, cap width). */
+const LONG_TEXT_CHAR_THRESHOLD = 32;
+/** Max `ch` for normal data columns (full value on `title` / CSV). */
+const MAX_DATA_COL_CH = 48;
+/** Max `ch` for long-text columns. */
+const MAX_LONG_TEXT_COL_CH = 32;
 /** Hard cap on measured string length when turning it into `ch` (pathological cells). */
 const MAX_CH_FOR_MIN = 400;
 /** Rows scanned when inferring column widths (full grid still sorts/filters all rows). */
 const WIDTH_SAMPLE_ROW_CAP = 200;
-/** Up to this many data columns, leftover row width may be split with weighted `fr` when the table fits the viewport. */
-const MAX_COLS_FOR_WEIGHTED_FR = 14;
-/** Cap on `fr` weight so one column cannot starve the rest. */
-const MAX_FR_WEIGHT = 200;
-/** Rough `ch` → px for monospace ~12px; over-estimate so we pick scroll mode before columns feel cramped. */
+/** Max rows kept in memory for sort/filter/render (avoids main-thread freezes). */
+export const RESULTS_TABLE_MAX_DISPLAY_ROWS = 2_500;
+/** Minimum `ch` for the row-number column. */
+const MIN_ROW_NUM_COL_CH = 4;
+/** Extra `ch` for row-number padding (commas + cell padding). */
+const ROW_NUM_PAD_CH = 2;
+/** Rough `ch` → px for intrinsic width estimate (monospace ~12.5px). */
 const CH_TO_PX_EST = 8.1;
-/** Padding + borders fudge per data column when estimating intrinsic width (px). */
-const COL_WIDTH_PAD_EST = 34;
-/** Row `#` column width estimate (px). */
-const ROW_NUM_EST_PX = 56;
+/** Horizontal padding/borders fudge per column (px). */
+const COL_WIDTH_PAD_PX = 28;
+/** Max `fr` weight so one column cannot starve the rest when stretching. */
+const MAX_FR_WEIGHT = 24;
 
 type ResultsTableProps = {
   result: QueryResult;
@@ -46,6 +49,11 @@ type ResultsTableProps = {
    * Ignored when `resultsExpanded` is true.
    */
   maxVisibleDataRows?: number | null;
+  /**
+   * Max rows loaded into the grid for sort/filter/render.
+   * Default: no cap (all API rows; scroll via virtual list). Pass `RESULTS_TABLE_MAX_DISPLAY_ROWS` to cap.
+   */
+  maxDisplayRows?: number | null;
 };
 
 const cellSearchText = (value: CellValue): string => {
@@ -54,12 +62,22 @@ const cellSearchText = (value: CellValue): string => {
   return String(value);
 };
 
-type ColumnWidthInfo = { trackCh: number; frWeight: number };
+/** Width for row index `1 … rowCount` (locale commas, e.g. `50,000`). */
+const computeRowNumColCh = (rowCount: number): number => {
+  const labelLen = Math.max(1, rowCount).toLocaleString().length;
+  return Math.max(MIN_ROW_NUM_COL_CH, labelLen + ROW_NUM_PAD_CH);
+};
 
-const computeColumnWidthInfo = (
+type ColumnTrack = {
+  minCh: number;
+  frWeight: number;
+  isLongText: boolean;
+};
+
+const computeColumnTracks = (
   columns: string[],
   rows: CellValue[][],
-): ColumnWidthInfo[] => {
+): ColumnTrack[] => {
   const sample = rows.length > WIDTH_SAMPLE_ROW_CAP ? rows.slice(0, WIDTH_SAMPLE_ROW_CAP) : rows;
   return columns.map((name, colIndex) => {
     let maxChars = name.length;
@@ -67,37 +85,59 @@ const computeColumnWidthInfo = (
       const len = cellSearchText(row[colIndex] ?? null).length;
       if (len > maxChars) maxChars = len;
     }
-    const paddedCh = Math.min(
-      Math.max(maxChars + 2, MIN_DATA_COL_CH),
-      MAX_CH_FOR_MIN,
-    );
+    const contentCh = Math.min(maxChars + COL_WIDTH_PAD_CH, MAX_CH_FOR_MIN);
     const isLongTextCol = maxChars >= LONG_TEXT_CHAR_THRESHOLD;
-    const trackCh = isLongTextCol
-      ? Math.max(MIN_DATA_COL_CH, Math.min(paddedCh, MAX_LONG_TEXT_COL_CH))
-      : paddedCh;
-    const frWeight = Math.max(1, Math.min(maxChars + 2, MAX_FR_WEIGHT));
-    return { trackCh, frWeight };
+    if (isLongTextCol) {
+      const minCh = Math.max(
+        MIN_DATA_COL_CH,
+        Math.min(contentCh, MAX_LONG_TEXT_COL_CH),
+      );
+      return {
+        minCh,
+        frWeight: 1,
+        isLongText: true,
+      };
+    }
+    const minCh = Math.max(MIN_DATA_COL_CH, Math.min(contentCh, MAX_DATA_COL_CH));
+    return {
+      minCh,
+      frWeight: Math.max(1, Math.min(Math.ceil(minCh / 3), MAX_FR_WEIGHT)),
+      isLongText: false,
+    };
   });
 };
 
-const estimateIntrinsicMinWidthPx = (infos: ColumnWidthInfo[]): number => {
-  let sum = ROW_NUM_EST_PX;
-  for (const { trackCh } of infos) {
-    sum += Math.max(MIN_COL_WIDTH, trackCh * CH_TO_PX_EST + COL_WIDTH_PAD_EST);
+const estimateIntrinsicWidthPx = (
+  rowNumCh: number,
+  tracks: ColumnTrack[],
+): number => {
+  let sum = rowNumCh * CH_TO_PX_EST + COL_WIDTH_PAD_PX;
+  for (const { minCh } of tracks) {
+    sum += minCh * CH_TO_PX_EST + COL_WIDTH_PAD_PX;
   }
   return Math.ceil(sum);
 };
 
-const buildGridTemplate = (infos: ColumnWidthInfo[], mode: "stretch" | "scroll"): string => {
-  if (infos.length === 0) return "";
-  const tracks = infos.map(({ trackCh, frWeight }) => {
-    const minTrack = `max(${MIN_COL_WIDTH}px, ${trackCh}ch)`;
-    if (mode === "stretch") {
-      return `minmax(${minTrack}, ${frWeight}fr)`;
-    }
-    return minTrack;
-  });
-  return `${ROW_NUM_COL} ${tracks.join(" ")}`;
+const buildGridTemplate = (
+  rowNumCh: number,
+  tracks: ColumnTrack[],
+  mode: "stretch" | "scroll",
+): string => {
+  const rowTrack = `${rowNumCh}ch`;
+  if (tracks.length === 0) {
+    return rowTrack;
+  }
+  const dataTracks =
+    mode === "scroll"
+      ? tracks.map(({ minCh }) => `${minCh}ch`)
+      : tracks.map(({ minCh, frWeight, isLongText }) => {
+          // Long-text: fixed width. Others: grow with fr (never use min(max, fr) — fr can be < min and break the grid).
+          if (isLongText) {
+            return `${minCh}ch`;
+          }
+          return `minmax(${minCh}ch, ${frWeight}fr)`;
+        });
+  return `${rowTrack} ${dataTracks.join(" ")}`;
 };
 
 const rowMatchesFilter = (row: CellValue[], q: string): boolean => {
@@ -140,6 +180,7 @@ export const ResultsTable = ({
   onToggleResultsExpanded,
   resultLabel,
   maxVisibleDataRows,
+  maxDisplayRows,
 }: ResultsTableProps) => {
   const dataRowCap = resultsExpanded
     ? undefined
@@ -149,12 +190,30 @@ export const ResultsTable = ({
         ? maxVisibleDataRows
         : RESULTS_TABLE_DEFAULT_MAX_DATA_ROWS;
 
+  const displayRowCap =
+    maxDisplayRows === null
+      ? null
+      : maxDisplayRows !== undefined
+        ? maxDisplayRows
+        : null;
+
+  const totalRowCount = result.row_count;
+  const rowsTruncated =
+    displayRowCap != null && result.rows.length > displayRowCap;
+  const displayRows = useMemo(
+    () =>
+      rowsTruncated && displayRowCap != null
+        ? result.rows.slice(0, displayRowCap)
+        : result.rows,
+    [result.rows, rowsTruncated, displayRowCap],
+  );
+
   const scrollAreaMaxHeight =
     dataRowCap != null && dataRowCap > 0
       ? `calc(${SCROLL_GRID_HEADER_REM}rem + ${dataRowCap * ROW_HEIGHT}px)`
       : undefined;
 
-  const { sortedRows, sort, toggleSort } = useSortedRows(result.rows);
+  const { sortedRows, sort, toggleSort } = useSortedRows(displayRows);
   const [filterText, setFilterText] = useState("");
 
   useEffect(() => {
@@ -182,20 +241,23 @@ export const ResultsTable = ({
     [filteredRows, startIndex, endIndex],
   );
 
-  const columnWidthInfo = useMemo(
-    () => computeColumnWidthInfo(result.columns, result.rows),
-    [result.columns, result.rows],
+  const rowNumColCh = useMemo(
+    () => computeRowNumColCh(totalRowCount),
+    [totalRowCount],
   );
 
-  const intrinsicMinWidthPx = useMemo(
-    () => estimateIntrinsicMinWidthPx(columnWidthInfo),
-    [columnWidthInfo],
+  const columnTracks = useMemo(
+    () => computeColumnTracks(result.columns, displayRows),
+    [result.columns, displayRows],
   );
 
-  const canUseFrLayout =
-    result.columns.length > 0 && result.columns.length <= MAX_COLS_FOR_WEIGHTED_FR;
+  const intrinsicWidthPx = useMemo(
+    () => estimateIntrinsicWidthPx(rowNumColCh, columnTracks),
+    [rowNumColCh, columnTracks],
+  );
 
-  const [stretchToViewport, setStretchToViewport] = useState(true);
+  /** Start false until measured — stretch + fr before layout yields invalid grid tracks. */
+  const [stretchToViewport, setStretchToViewport] = useState(false);
 
   useLayoutEffect(() => {
     const el = containerRef.current;
@@ -203,29 +265,26 @@ export const ResultsTable = ({
 
     const update = () => {
       const w = el.clientWidth;
-      if (!canUseFrLayout) {
-        setStretchToViewport(false);
-        return;
-      }
-      setStretchToViewport(w >= intrinsicMinWidthPx - 1);
+      setStretchToViewport(w > 0 && w >= intrinsicWidthPx - 1);
     };
 
     update();
     const ro = new ResizeObserver(() => update());
     ro.observe(el);
     return () => ro.disconnect();
-  }, [containerRef, intrinsicMinWidthPx, canUseFrLayout, result.columns]);
+  }, [containerRef, intrinsicWidthPx, result.columns]);
+
+  const fillViewport = stretchToViewport;
 
   const gridTemplate = useMemo(
     () =>
       buildGridTemplate(
-        columnWidthInfo,
-        canUseFrLayout && stretchToViewport ? "stretch" : "scroll",
+        rowNumColCh,
+        columnTracks,
+        fillViewport ? "stretch" : "scroll",
       ),
-    [columnWidthInfo, canUseFrLayout, stretchToViewport],
+    [rowNumColCh, columnTracks, fillViewport],
   );
-
-  const useFrLayout = canUseFrLayout && stretchToViewport;
 
   const handleDownloadCsv = useCallback(() => {
     const csv = tabularToCsv(result.columns, filteredRows);
@@ -255,6 +314,15 @@ export const ResultsTable = ({
         resultsExpanded && "h-full w-full min-h-0 min-w-0",
       )}
     >
+      {rowsTruncated && displayRowCap != null ? (
+        <div class="border-b border-warn/40 bg-warn/10 px-4 py-2 font-mono text-[11px] leading-snug text-warn">
+          Showing the first {displayRowCap.toLocaleString()} of{" "}
+          {totalRowCount.toLocaleString()} rows in this grid. Lower{" "}
+          <span class="text-text">sysparm_limit</span>, set{" "}
+          <span class="text-text">sysparm_fields</span>, or use JDBC for very
+          large extracts.
+        </div>
+      ) : null}
       <div class="flex flex-wrap items-end justify-between gap-3 border-b border-border bg-surface-2 px-4 py-2">
         <div class="flex min-w-0 flex-1 flex-wrap items-end gap-3">
           {resultLabel != null && resultLabel.trim() !== "" ? (
@@ -341,13 +409,17 @@ export const ResultsTable = ({
             : undefined
         }
       >
-        <div class={cn("inline-block align-top", useFrLayout ? "min-w-full" : "min-w-full w-max")}>
+        <div
+          class={cn(
+            "inline-block min-w-full align-top",
+            fillViewport ? "w-full" : "w-max",
+          )}
+        >
           <div
             role="row"
             class={cn(
-              // Same font-size as data rows so `ch` in `gridTemplateColumns` resolves identically (header/body alignment).
               "sticky top-0 z-20 grid border-b border-border bg-surface-2 font-mono text-[12.5px]",
-              useFrLayout ? "w-full" : "w-max justify-start",
+              fillViewport ? "w-full" : "w-max justify-start",
             )}
             style={{ gridTemplateColumns: gridTemplate }}
           >
@@ -394,8 +466,17 @@ export const ResultsTable = ({
               No rows match “{filterText.trim()}”. Clear the search to see all rows.
             </div>
           ) : (
-            <div class="relative z-0 w-max min-w-full" style={{ height: totalHeight }}>
-              <div class="w-max min-w-full" style={{ transform: `translateY(${paddingTop}px)` }}>
+            <div
+              class={cn(
+                "relative z-0 min-w-full",
+                fillViewport ? "w-full" : "w-max",
+              )}
+              style={{ height: totalHeight }}
+            >
+              <div
+                class={cn("min-w-full", fillViewport ? "w-full" : "w-max")}
+                style={{ transform: `translateY(${paddingTop}px)` }}
+              >
                 {visible.map((row, offset) => {
                   const rowIndex = startIndex + offset;
                   return (
@@ -404,7 +485,7 @@ export const ResultsTable = ({
                       key={rowIndex}
                       class={cn(
                         "grid border-b border-border/60 font-mono text-[12.5px] text-text transition-colors",
-                        useFrLayout ? "w-full" : "w-max justify-start",
+                        fillViewport ? "w-full" : "w-max justify-start",
                         rowIndex % 2 === 1 ? "bg-bg/40" : "bg-code",
                         "hover:bg-accent-dim/40",
                       )}

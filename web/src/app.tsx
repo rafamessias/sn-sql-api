@@ -29,6 +29,7 @@ export const App = () => {
     setLastRunDurationMs: setEditorTabLastRunDurationMs,
     setLastTableApiRunTimes: setEditorTabLastTableApiRunTimes,
     setCompareTableApi: setEditorTabCompareTableApi,
+    setTimingOnly: setEditorTabTimingOnly,
     addTab: addEditorTab,
     closeTab: closeEditorTab,
   } = useEditorTabs();
@@ -141,6 +142,9 @@ export const App = () => {
               onLastSuccessfulTableApiRun={setEditorTabLastTableApiRunTimes}
               onCompareTableApiChange={(enabled) =>
                 setEditorTabCompareTableApi(editorActiveId, enabled)
+              }
+              onTimingOnlyChange={(enabled) =>
+                setEditorTabTimingOnly(editorActiveId, enabled)
               }
               connectionPayload={connectionPayload}
               connectionLabel={connectionLabel}

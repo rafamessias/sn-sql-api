@@ -139,6 +139,13 @@ export const useEditorTabs = () => {
     [updateTab],
   );
 
+  const setTimingOnly = useCallback(
+    (id: string, enabled: boolean) => {
+      updateTab(id, { timingOnly: enabled });
+    },
+    [updateTab],
+  );
+
   const nextDefaultName = useCallback(
     (existing: EditorTab[]): string => {
       let n = existing.length + 1;
@@ -201,6 +208,7 @@ export const useEditorTabs = () => {
     setLastRunDurationMs,
     setLastTableApiRunTimes,
     setCompareTableApi,
+    setTimingOnly,
     addTab,
     closeTab,
   };

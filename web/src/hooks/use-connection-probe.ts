@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { checkConnection } from "../lib/api";
+import { abortSignalAfterMs } from "../lib/abort-signal";
 import { appendAppLog } from "../lib/app-logs";
 import type { ConnectionPayload } from "../lib/connections";
 
@@ -11,6 +12,8 @@ export type ConnectionProbeStatus =
 type ProbeReason = "initial" | "interval" | "manual";
 
 const REFRESH_INTERVAL_MS = 30_000;
+/** Match backend JDBC health timeout; avoid hung fetches stacking on the dev proxy. */
+const PROBE_TIMEOUT_MS = 25_000;
 
 const buildDepsKey = (payload: ConnectionPayload | undefined): string => {
   if (!payload) return "__default__";
@@ -96,11 +99,20 @@ export const useConnectionProbe = ({
       ? null
       : displayLabelRef.current;
 
-    setStatus({ kind: "checking" });
+    const showCheckingUi = reason === "initial" || reason === "manual";
+    if (showCheckingUi) {
+      setStatus({ kind: "checking" });
+    }
+
+    const { signal: timedSignal, dispose: disposeTimeout } = abortSignalAfterMs(
+      PROBE_TIMEOUT_MS,
+      controller.signal,
+    );
+
     const t0 = performance.now();
 
     try {
-      const result = await checkConnection(payload, null, controller.signal);
+      const result = await checkConnection(payload, null, timedSignal);
       if (controller.signal.aborted || epoch !== probeEpochRef.current) return;
       const elapsed = `${Math.round(performance.now() - t0)}ms`;
       if (result.status === "ok") {
@@ -114,10 +126,17 @@ export const useConnectionProbe = ({
       }
     } catch (err) {
       if (controller.signal.aborted || epoch !== probeEpochRef.current) return;
-      const message = err instanceof Error ? err.message : "unreachable";
       const elapsed = `${Math.round(performance.now() - t0)}ms`;
+      const message =
+        timedSignal.aborted && !controller.signal.aborted
+          ? `Health check timed out after ${PROBE_TIMEOUT_MS / 1000}s`
+          : err instanceof Error
+            ? err.message
+            : "unreachable";
       setStatus({ kind: "error", message });
       logProbe(reason, false, logLabel, elapsed, message, lastSigRef);
+    } finally {
+      disposeTimeout();
     }
   }, []);
 

@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import preact from "@preact/preset-vite";
+import { devHmrDockerPlugin } from "./vite-plugin-dev-hmr";
 import { BACKEND_PROXY_PATH_PREFIXES, spa404Plugin } from "./vite-plugin-spa-404";
 
 const BACKEND = process.env.VITE_BACKEND_URL ?? "http://localhost:8000";
@@ -13,16 +14,19 @@ const backendProxy = Object.fromEntries(
 );
 const USE_POLLING = process.env.VITE_USE_POLLING === "true";
 
+const DEV_PORT = Number(process.env.VITE_DEV_PORT ?? 5173);
+
 export default defineConfig({
-  plugins: [spa404Plugin(), preact()],
+  plugins: [devHmrDockerPlugin(), spa404Plugin(), preact()],
   server: {
-    port: 5173,
+    port: DEV_PORT,
     strictPort: true,
     host: true,
     watch: USE_POLLING
       ? {
           usePolling: true,
-          interval: 300,
+          // Slower polling reduces watcher churn on WSL2 bind mounts (fewer HMR reconnects).
+          interval: Number(process.env.VITE_POLL_INTERVAL_MS ?? 1000),
         }
       : undefined,
     proxy: backendProxy,

@@ -24,6 +24,8 @@ class Settings(BaseSettings):
         alias="SN_JDBC_DRIVER_CLASS",
     )
     sn_jdbc_url: str | None = Field(default=None, alias="SN_JDBC_URL")
+    # Internal JDBC fetch chunk size (ServiceNow often caps ~10k–13k per execute).
+    sn_jdbc_page_size: int = Field(default=10_000, alias="SN_JDBC_PAGE_SIZE", ge=1)
 
     api_key: SecretStr | None = Field(default=None, alias="API_KEY")
     # When true, do not serve the bundled web UI at "/". All REST endpoints

@@ -7,6 +7,8 @@ export type TableApiFormState = {
   sysparm_view: string;
   sysparm_display_value: "" | "true" | "false" | "all";
   sysparm_exclude_reference_link: boolean;
+  /** When true, ServiceNow skips Link pagination headers (avoids 400 on long queries). */
+  sysparm_suppress_pagination_header: boolean;
 };
 
 export const defaultTableApiForm = (): TableApiFormState => ({
@@ -18,4 +20,5 @@ export const defaultTableApiForm = (): TableApiFormState => ({
   sysparm_view: "",
   sysparm_display_value: "",
   sysparm_exclude_reference_link: false,
+  sysparm_suppress_pagination_header: false,
 });

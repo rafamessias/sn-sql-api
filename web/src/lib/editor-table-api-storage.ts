@@ -23,6 +23,9 @@ export const sanitizeTableApiForm = (raw: unknown): TableApiFormState | null => 
     sysparm_view: typeof o.sysparm_view === "string" ? o.sysparm_view : "",
     sysparm_display_value: isDisplayValue(display) ? display : "",
     sysparm_exclude_reference_link: Boolean(o.sysparm_exclude_reference_link),
+    sysparm_suppress_pagination_header: Boolean(
+      o.sysparm_suppress_pagination_header,
+    ),
   };
 };
 

@@ -34,6 +34,11 @@ services:
       # Bind-mounted FS in WSL2/Docker needs polling for chokidar/Vite watcher.
       - CHOKIDAR_USEPOLLING=true
       - VITE_USE_POLLING=true
+      - VITE_DEV_PORT=5173
+      # Browser must open the HMR WebSocket on the host-mapped port (not the container id).
+      - VITE_HMR_HOST=localhost
+      - VITE_HMR_CLIENT_PORT=5173
+      - VITE_POLL_INTERVAL_MS=1000
     command: >
       sh -c "npm install --no-audit --no-fund --loglevel=error &&
              npm run dev -- --host 0.0.0.0 --port 5173"

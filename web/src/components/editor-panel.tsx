@@ -7,7 +7,10 @@ import {
 } from "preact/hooks";
 import { Editor } from "./editor";
 import { EditorTabsBar } from "./editor-tabs-bar";
-import { ResultsTable } from "./results-table";
+import {
+  RESULTS_TABLE_MAX_DISPLAY_ROWS,
+  ResultsTable,
+} from "./results-table";
 import { StatusBar } from "./status-bar";
 import { isAbortError, runQuery, runTableApiRecords, type QueryResult, type TableApiRecordsResponse } from "../lib/api";
 import { cn } from "../lib/cn";
@@ -40,8 +43,28 @@ import {
   defaultTableApiForm,
   type TableApiFormState,
 } from "../lib/table-api-form";
+import { scheduleHeavyUpdate } from "../lib/defer-heavy-update";
+import { filterQueryResultsForPersist } from "../lib/result-persist-limits";
 import { showToast } from "../lib/toast";
 import { TableApiComparePanel } from "./table-api-compare-panel";
+import { TimingOnlySummary } from "./timing-only-summary";
+
+const HEAVY_RESULT_ROW_THRESHOLD = 300;
+
+const isHeavyResult = (data: QueryResult): boolean =>
+  data.row_count > HEAVY_RESULT_ROW_THRESHOLD ||
+  data.rows.length > HEAVY_RESULT_ROW_THRESHOLD;
+
+const setQueryResultState = <T extends QueryResult>(
+  setter: (next: T | null) => void,
+  data: T | null,
+): void => {
+  if (data === null || !isHeavyResult(data)) {
+    setter(data);
+    return;
+  }
+  scheduleHeavyUpdate(() => setter(data));
+};
 
 type Status =
   | { kind: "idle"; message: string }
@@ -99,6 +122,7 @@ type EditorPanelProps = {
   ) => void;
   /** Split JDBC + Table API layout for the active tab (stored on the tab). */
   onCompareTableApiChange: (enabled: boolean) => void;
+  onTimingOnlyChange: (enabled: boolean) => void;
   connectionPayload: ConnectionPayload | undefined;
   connectionLabel: string;
   schemaTables?: readonly string[];
@@ -116,6 +140,7 @@ export const EditorPanel = ({
   onLastSuccessfulRunDuration,
   onLastSuccessfulTableApiRun,
   onCompareTableApiChange,
+  onTimingOnlyChange,
   connectionPayload,
   connectionLabel,
   schemaTables,
@@ -186,6 +211,12 @@ export const EditorPanel = ({
 
   const tabIdsKey = useMemo(() => tabs.map((t) => t.id).join("|"), [tabs]);
 
+  /** Tabs without split JDBC+REST compare — JDBC grids show and persist all rows. */
+  const jdbcOnlyTabIds = useMemo(
+    () => new Set(tabs.filter((t) => t.compareTableApi !== true).map((t) => t.id)),
+    [tabs],
+  );
+
   useEffect(() => {
     const tabIds = new Set(
       tabIdsKey.length > 0 ? tabIdsKey.split("|") : [],
@@ -219,8 +250,12 @@ export const EditorPanel = ({
         filtered[id] = resultsByTab[id]!;
       }
     }
-    persistQueryResultsByTab(filtered);
-  }, [resultsByTab, tabIdsKey]);
+    persistQueryResultsByTab(
+      filterQueryResultsForPersist(filtered, {
+        jdbcOnlyTabIds: jdbcOnlyTabIds,
+      }),
+    );
+  }, [resultsByTab, tabIdsKey, jdbcOnlyTabIds]);
 
   useEffect(() => {
     const tabIds = new Set(
@@ -291,7 +326,7 @@ export const EditorPanel = ({
         filtered[id] = tableApiResultsByTab[id]!;
       }
     }
-    persistTableApiResultsByTab(filtered);
+    persistTableApiResultsByTab(filterQueryResultsForPersist(filtered));
   }, [tableApiResultsByTab, tabIdsKey]);
 
   const hasStoredResults = useMemo(
@@ -363,7 +398,10 @@ export const EditorPanel = ({
     return null;
   }, [compareMode, compareFastLane, status.kind, tableApiStatus.kind]);
 
-  const showAnyResult = Boolean(result) || Boolean(compareMode && tableApiResult);
+  const showAnyResult =
+    Boolean(result) ||
+    Boolean(compareMode && tableApiResult) ||
+    Boolean(compareMode && tableApiBusy);
 
   const setActiveResult = useCallback(
     (next: QueryResult | null) => {
@@ -406,10 +444,44 @@ export const EditorPanel = ({
           ? true
           : undefined,
         sysparm_view: form.sysparm_view.trim() || undefined,
+        sysparm_suppress_pagination_header: form.sysparm_suppress_pagination_header
+          ? true
+          : undefined,
+        timing_only: activeTab.timingOnly === true ? true : undefined,
       };
     },
-    [connectionPayload],
+    [activeTab.timingOnly, connectionPayload],
   );
+
+  const formatJdbcOkMessage = (
+    data: QueryResult,
+    browserMs: number,
+    label: string,
+  ): string => {
+    if (data.timing_only) {
+      const server =
+        data.duration_ms != null
+          ? ` · server ${formatDurationMs(data.duration_ms)}`
+          : "";
+      return `${data.row_count.toLocaleString()} row(s) (timing only)${server} · browser ${formatDurationMs(browserMs)} · ${label}`;
+    }
+    return `${data.row_count.toLocaleString()} row(s) in ${formatDurationMs(browserMs)} · ${label}`;
+  };
+
+  const formatTableApiOkMessage = (
+    data: TableApiRecordsResponse,
+    browserMs: number,
+    label: string,
+  ): string => {
+    const totalHint =
+      data.total_count != null
+        ? ` · X-Total-Count ${data.total_count.toLocaleString()}`
+        : "";
+    if (data.timing_only) {
+      return `${data.row_count.toLocaleString()} row(s) (timing only) · instance ${data.duration_ms}ms · browser ${formatDurationMs(browserMs)}${totalHint} · ${label}`;
+    }
+    return `${data.row_count.toLocaleString()} row(s) · instance ${data.duration_ms}ms · browser ${formatDurationMs(browserMs)}${totalHint} · ${label}`;
+  };
 
   const handleRun = useCallback(async () => {
     const trimmed = activeTab.query.trim();
@@ -455,14 +527,15 @@ export const EditorPanel = ({
         connectionPayload,
         null,
         controller.signal,
+        { timingOnly: activeTab.timingOnly === true },
       );
       const elapsed = Math.round(performance.now() - started);
-      setTabResult(data);
-      onLastSuccessfulRunDuration?.(tabId, elapsed);
       setTabStatus({
         kind: "ok",
-        message: `${data.row_count.toLocaleString()} row(s) in ${formatDurationMs(elapsed)} · ${label}`,
+        message: formatJdbcOkMessage(data, elapsed, label),
       });
+      setQueryResultState(setTabResult, data);
+      onLastSuccessfulRunDuration?.(tabId, elapsed);
     } catch (err) {
       if (controller.signal.aborted || isAbortError(err)) {
         const elapsed = Math.round(performance.now() - started);
@@ -491,6 +564,7 @@ export const EditorPanel = ({
     connectionPayload,
     clearRunningTimer,
     onLastSuccessfulRunDuration,
+    activeTab.timingOnly,
   ]);
 
   const handleRunTableApi = useCallback(async () => {
@@ -541,16 +615,12 @@ export const EditorPanel = ({
         controller.signal,
       );
       const clientMs = Math.round(performance.now() - started);
-      setTabTableResult(data);
-      onLastSuccessfulTableApiRun?.(tabId, clientMs, data.duration_ms);
-      const totalHint =
-        data.total_count != null
-          ? ` · X-Total-Count ${data.total_count.toLocaleString()}`
-          : "";
       setTabTableStatus({
         kind: "ok",
-        message: `${data.row_count.toLocaleString()} row(s) · instance ${data.duration_ms}ms · browser ${formatDurationMs(clientMs)}${totalHint} · ${label}`,
+        message: formatTableApiOkMessage(data, clientMs, label),
       });
+      setQueryResultState(setTabTableResult, data);
+      onLastSuccessfulTableApiRun?.(tabId, clientMs, data.duration_ms);
     } catch (err) {
       if (controller.signal.aborted || isAbortError(err)) {
         const elapsed = Math.round(performance.now() - started);
@@ -620,41 +690,108 @@ export const EditorPanel = ({
       setTableApiResultsByTab((prev) => ({ ...prev, [tabId]: next }));
     };
 
-    const started = performance.now();
     runningForTabIdRef.current = tabId;
-    setTableApiBusyByTab((prev) => ({ ...prev, [tabId]: true }));
+    setTableApiBusyByTab((prev) => ({ ...prev, [tabId]: false }));
 
-    const tickRunningMessage = () => {
-      const elapsed = performance.now() - started;
-      const msg = `JDBC + Table API · ${label}… (${formatRunningClock(elapsed)})`;
-      setTabStatus({ kind: "running", message: msg });
-      setTabTableStatus({ kind: "running", message: msg });
+    const applyStopped = (jdbcElapsedMs: number, restElapsedMs?: number) => {
+      setCompareFastLaneByTab((prev) => ({ ...prev, [tabId]: null }));
+      setTabStatus({
+        kind: "idle",
+        message: `Stopped after ${formatDurationMs(jdbcElapsedMs)} · ${label}`,
+      });
+      if (restElapsedMs != null) {
+        setTabTableStatus({
+          kind: "idle",
+          message: `Stopped after ${formatDurationMs(restElapsedMs)} · ${label}`,
+        });
+      }
     };
-    tickRunningMessage();
-    runningTimerRef.current = globalThis.setInterval(tickRunningMessage, 250);
+
+    const jdbcStarted = performance.now();
+
+    const tickJdbcRunning = () => {
+      const elapsed = performance.now() - jdbcStarted;
+      setTabStatus({
+        kind: "running",
+        message: `JDBC ${label}… (${formatRunningClock(elapsed)})`,
+      });
+    };
+    tickJdbcRunning();
+    runningTimerRef.current = globalThis.setInterval(tickJdbcRunning, 250);
 
     try {
-      const [jdbcR, restR] = await Promise.all([
-        timedRequest(() =>
-          runQuery(trimmed, connectionPayload, null, controller.signal),
-        ),
-        timedRequest(() =>
-          runTableApiRecords(
-            buildTableApiRequestBody(form),
-            null,
-            controller.signal,
-          ),
-        ),
-      ]);
+      const jdbcR = await timedRequest(() =>
+        runQuery(trimmed, connectionPayload, null, controller.signal, {
+          timingOnly: activeTab.timingOnly === true,
+        }),
+      );
+
+      clearRunningTimer();
+
+      if (controller.signal.aborted) {
+        applyStopped(Math.round(performance.now() - jdbcStarted));
+        return;
+      }
 
       if (jdbcR.ok) {
-        setTabResult(jdbcR.value);
+        setTabStatus({
+          kind: "ok",
+          message: formatJdbcOkMessage(jdbcR.value, jdbcR.ms, label),
+        });
+        setQueryResultState(setTabResult, jdbcR.value);
         onLastSuccessfulRunDuration?.(tabId, jdbcR.ms);
       } else {
         setTabResult(null);
+        const jdbcErr =
+          jdbcR.reason instanceof Error
+            ? jdbcR.reason.message
+            : String(jdbcR.reason);
+        setTabStatus({
+          kind: "error",
+          message: `Error after ${formatDurationMs(jdbcR.ms)} — ${jdbcErr}`,
+          copyText: jdbcErr,
+        });
+        setCompareFastLaneByTab((prev) => ({ ...prev, [tabId]: null }));
+        return;
       }
+
+      setTableApiBusyByTab((prev) => ({ ...prev, [tabId]: true }));
+      const restStarted = performance.now();
+
+      const tickRestRunning = () => {
+        const elapsed = performance.now() - restStarted;
+        setTabTableStatus({
+          kind: "running",
+          message: `Table API ${label}… (${formatRunningClock(elapsed)})`,
+        });
+      };
+      tickRestRunning();
+      runningTimerRef.current = globalThis.setInterval(tickRestRunning, 250);
+
+      const restR = await timedRequest(() =>
+        runTableApiRecords(
+          buildTableApiRequestBody(form),
+          null,
+          controller.signal,
+        ),
+      );
+
+      clearRunningTimer();
+
+      if (controller.signal.aborted) {
+        applyStopped(
+          jdbcR.ms,
+          Math.round(performance.now() - restStarted),
+        );
+        return;
+      }
+
       if (restR.ok) {
-        setTabTableResult(restR.value);
+        setTabTableStatus({
+          kind: "ok",
+          message: formatTableApiOkMessage(restR.value, restR.ms, label),
+        });
+        setQueryResultState(setTabTableResult, restR.value);
         onLastSuccessfulTableApiRun?.(
           tabId,
           restR.ms,
@@ -662,6 +799,15 @@ export const EditorPanel = ({
         );
       } else {
         setTabTableResult(null);
+        const restErr =
+          restR.reason instanceof Error
+            ? restR.reason.message
+            : String(restR.reason);
+        setTabTableStatus({
+          kind: "error",
+          message: `Error after ${formatDurationMs(restR.ms)} — ${restErr}`,
+          copyText: restErr,
+        });
       }
 
       let fast: CompareFastLane | null = null;
@@ -675,46 +821,10 @@ export const EditorPanel = ({
         }
       }
       setCompareFastLaneByTab((prev) => ({ ...prev, [tabId]: fast }));
-
-      const jdbcKind: Status["kind"] = jdbcR.ok ? "ok" : "error";
-      const jdbcMsg = jdbcR.ok
-        ? `${jdbcR.value.row_count.toLocaleString()} row(s) in ${formatDurationMs(jdbcR.ms)} (browser) · ${label}`
-        : `Error after ${formatDurationMs(jdbcR.ms)} — ${
-            jdbcR.reason instanceof Error
-              ? jdbcR.reason.message
-              : String(jdbcR.reason)
-          }`;
-
-      const restKind: Status["kind"] = restR.ok ? "ok" : "error";
-      const restMsg = restR.ok
-        ? `${restR.value.row_count.toLocaleString()} row(s) · browser ${formatDurationMs(restR.ms)} · instance ${restR.value.duration_ms}ms${
-            restR.value.total_count != null
-              ? ` · X-Total-Count ${restR.value.total_count.toLocaleString()}`
-              : ""
-          } · ${label}`
-        : `Error after ${formatDurationMs(restR.ms)} — ${
-            restR.reason instanceof Error
-              ? restR.reason.message
-              : String(restR.reason)
-          }`;
-
-      setTabStatus({
-        kind: jdbcKind,
-        message: jdbcMsg,
-        copyText: jdbcKind === "error" ? jdbcMsg : undefined,
-      });
-      setTabTableStatus({
-        kind: restKind,
-        message: restMsg,
-        copyText: restKind === "error" ? restMsg : undefined,
-      });
     } catch (err) {
+      clearRunningTimer();
       if (controller.signal.aborted || isAbortError(err)) {
-        const elapsed = Math.round(performance.now() - started);
-        const msg = `Stopped after ${formatDurationMs(elapsed)} · ${label}`;
-        setCompareFastLaneByTab((prev) => ({ ...prev, [tabId]: null }));
-        setTabStatus({ kind: "idle", message: msg });
-        setTabTableStatus({ kind: "idle", message: msg });
+        applyStopped(Math.round(performance.now() - jdbcStarted));
         return;
       }
       const message = err instanceof Error ? err.message : String(err);
@@ -737,6 +847,7 @@ export const EditorPanel = ({
   }, [
     activeId,
     activeTab.query,
+    activeTab.timingOnly,
     buildTableApiRequestBody,
     clearRunningTimer,
     connectionLabel,
@@ -902,6 +1013,15 @@ export const EditorPanel = ({
     }));
   }, [activeId]);
 
+  useEffect(() => {
+    setResultsExpandedByTab((prev) => {
+      if (!(activeId in prev) || !prev[activeId]) return prev;
+      const next = { ...prev };
+      delete next[activeId];
+      return next;
+    });
+  }, [activeId, compareMode, activeTab.timingOnly]);
+
   const handleClearStoredResults = useCallback(() => {
     clearQueryResultsByTabStorage();
     clearTableApiResultsByTabStorage();
@@ -917,15 +1037,79 @@ export const EditorPanel = ({
     });
   }, [setActiveStatus]);
 
-  const editorUnderlayHidden = Boolean(result && resultsExpanded);
+  const isTimingOnlyResult = (r: QueryResult | null | undefined): boolean =>
+    Boolean(r?.timing_only);
+
   const isDualJdbcRest =
-    compareMode && Boolean(result) && Boolean(tableApiResult);
-  const showExpandedOverlay = Boolean(result && resultsExpanded && !isDualJdbcRest);
+    compareMode &&
+    Boolean(result) &&
+    Boolean(tableApiResult) &&
+    !isTimingOnlyResult(result) &&
+    !isTimingOnlyResult(tableApiResult);
+  const showExpandedOverlay = Boolean(
+    result &&
+      resultsExpanded &&
+      !isDualJdbcRest &&
+      !isTimingOnlyResult(result),
+  );
+  const editorUnderlayHidden = showExpandedOverlay;
+
+  const renderJdbcResultPane = (
+    data: QueryResult,
+    opts?: {
+      resultsExpanded?: boolean;
+      onToggleResultsExpanded?: () => void;
+      browserMs?: number;
+    },
+  ) => {
+    if (isTimingOnlyResult(data)) {
+      return (
+        <TimingOnlySummary
+          result={data}
+          label={`JDBC · ${connectionLabel}`}
+          browserMs={opts?.browserMs}
+        />
+      );
+    }
+    return (
+      <ResultsTable
+        result={data}
+        resultsExpanded={opts?.resultsExpanded ?? false}
+        onToggleResultsExpanded={opts?.onToggleResultsExpanded}
+        maxVisibleDataRows={opts?.resultsExpanded ? null : undefined}
+        maxDisplayRows={
+          compareMode ? RESULTS_TABLE_MAX_DISPLAY_ROWS : undefined
+        }
+      />
+    );
+  };
+
+  const renderTableApiResultPane = (
+    data: TableApiRecordsResponse,
+    browserMs?: number,
+  ) => {
+    if (isTimingOnlyResult(data)) {
+      return (
+        <TimingOnlySummary
+          result={data}
+          label={`Table API · ${connectionLabel}`}
+          browserMs={browserMs}
+        />
+      );
+    }
+    return (
+      <ResultsTable
+        result={data}
+        resultsExpanded={false}
+        maxDisplayRows={RESULTS_TABLE_MAX_DISPLAY_ROWS}
+      />
+    );
+  };
 
   const editorCommonProps = {
     query: activeTab.query,
     onQueryChange: onActiveQueryChange,
-    isRunning: status.kind === "running",
+    isRunning: status.kind === "running" || tableApiBusy,
     onRun: handleRun,
     onStop: handleStop,
     onClear: handleClear,
@@ -947,17 +1131,34 @@ export const EditorPanel = ({
           onRename={onRenameTab}
           onAdd={onAddTab}
         />
-        <label class="flex cursor-pointer select-none items-center gap-2 rounded-md border border-border/60 bg-surface-2/80 px-3 py-2 text-[12px] text-muted hover:border-border">
-          <input
-            type="checkbox"
-            class="rounded border-border"
-            checked={compareMode}
-            onChange={(e) =>
-              handleToggleCompareMode((e.target as HTMLInputElement).checked)
-            }
-          />
-          Split view: compare JDBC with Table API (REST)
-        </label>
+        <div class="flex flex-wrap items-center gap-2">
+          <label class="inline-flex cursor-pointer select-none items-center gap-2 rounded-md border border-border/60 bg-surface-2/80 px-3 py-2 text-[12px] text-muted hover:border-border">
+            <input
+              type="checkbox"
+              class="rounded border-border"
+              checked={compareMode}
+              onChange={(e) =>
+                handleToggleCompareMode((e.target as HTMLInputElement).checked)
+              }
+            />
+            Split view: compare JDBC with Table API (REST)
+          </label>
+          <label
+            class="inline-flex cursor-pointer select-none items-center gap-2 rounded-md border border-border/60 bg-surface-2/80 px-3 py-2 text-[12px] text-muted hover:border-border"
+            title="Full instance fetch with your query/sysparms; returns counts and timing only (no result grid in the browser)"
+          >
+            <input
+              type="checkbox"
+              class="rounded border-border"
+              checked={activeTab.timingOnly === true}
+              disabled={status.kind === "running" || tableApiBusy}
+              onChange={(e) =>
+                onTimingOnlyChange((e.target as HTMLInputElement).checked)
+              }
+            />
+            Timing only (no rows)
+          </label>
+        </div>
       </div>
 
       <div class="relative isolate flex min-h-0 min-w-0 flex-1 flex-col gap-4">
@@ -983,6 +1184,7 @@ export const EditorPanel = ({
                     }))
                   }
                   onRunRest={handleRunTableApi}
+                  onStopRest={handleStop}
                   onRunBoth={handleRunBoth}
                   onTranslateNotice={handleTableApiTranslateNotice}
                   onApplyApproximateSqlToJdbc={onActiveQueryChange}
@@ -1070,6 +1272,7 @@ export const EditorPanel = ({
                     }))
                   }
                   onRunRest={handleRunTableApi}
+                  onStopRest={handleStop}
                   onRunBoth={handleRunBoth}
                   onTranslateNotice={handleTableApiTranslateNotice}
                   onApplyApproximateSqlToJdbc={onActiveQueryChange}
@@ -1149,13 +1352,32 @@ export const EditorPanel = ({
                   />
                 </div>
               </div>
-            ) : isDualJdbcRest ? (
+            ) : compareMode && result && tableApiResult ? (
               <div class="grid min-h-0 min-w-0 flex-1 items-start gap-3 xl:grid-cols-2">
                 <div class="min-h-0 w-full min-w-0">
-                  <ResultsTable result={result!} resultsExpanded={false} />
+                  {renderJdbcResultPane(result, {
+                    browserMs: activeTab.lastRunDurationMs,
+                  })}
                 </div>
                 <div class="min-h-0 w-full min-w-0">
-                  <ResultsTable result={tableApiResult!} resultsExpanded={false} />
+                  {renderTableApiResultPane(
+                    tableApiResult,
+                    activeTab.lastTableApiBrowserMs,
+                  )}
+                </div>
+              </div>
+            ) : compareMode && result && tableApiBusy && !tableApiResult ? (
+              <div class="grid min-h-0 min-w-0 flex-1 items-start gap-3 xl:grid-cols-2">
+                <div class="min-h-0 w-full min-w-0">
+                  {renderJdbcResultPane(result, {
+                    browserMs: activeTab.lastRunDurationMs,
+                  })}
+                </div>
+                <div class="flex min-h-[12rem] flex-col items-center justify-center rounded-lg border border-dashed border-border bg-surface/50 px-4 py-8 text-center">
+                  <p class="font-mono text-sm text-muted">Table API running…</p>
+                  <p class="mt-2 font-mono text-[11px] text-subtle">
+                    {tableApiStatus.message}
+                  </p>
                 </div>
               </div>
             ) : result ? (
@@ -1165,15 +1387,30 @@ export const EditorPanel = ({
                   resultsExpanded ? "relative flex-1" : "relative flex-1 min-h-0",
                 )}
               >
-                <ResultsTable
-                  result={result}
-                  resultsExpanded={resultsExpanded}
-                  onToggleResultsExpanded={handleToggleResultsExpanded}
-                />
+                {renderJdbcResultPane(result, {
+                  resultsExpanded,
+                  onToggleResultsExpanded: handleToggleResultsExpanded,
+                  browserMs: activeTab.lastRunDurationMs,
+                })}
+              </div>
+            ) : compareMode && tableApiBusy && !tableApiResult ? (
+              <div class="flex min-h-0 min-w-0 flex-1 flex-col items-center justify-center rounded-lg border border-dashed border-border bg-surface/50 px-4 py-8 text-center">
+                <p class="font-mono text-sm text-muted">
+                  Table API running…
+                </p>
+                <p class="mt-2 font-mono text-[11px] text-subtle">
+                  {tableApiStatus.message}
+                </p>
+                <p class="mt-1 font-mono text-[11px] text-subtle">
+                  Use Stop in the query toolbar if this takes too long.
+                </p>
               </div>
             ) : compareMode && tableApiResult ? (
-              <div class="min-h-0 w-full">
-                <ResultsTable result={tableApiResult} resultsExpanded={false} />
+              <div class="flex min-h-0 min-w-0 flex-1 flex-col">
+                {renderTableApiResultPane(
+                  tableApiResult,
+                  activeTab.lastTableApiBrowserMs,
+                )}
               </div>
             ) : null}
           </>

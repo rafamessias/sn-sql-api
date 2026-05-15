@@ -5,6 +5,10 @@ import type { ConnectionPayload } from "../lib/connections";
 import { sqlToSysparm, sysparmToSql } from "../lib/sql-sysparm-translate";
 import { showToast } from "../lib/toast";
 import type { TableApiFormState } from "../lib/table-api-form";
+import {
+  TableApiLimitsAdvice,
+  TableApiLimitsReferenceLink,
+} from "./table-api-limits-advice";
 
 export type { TableApiFormState } from "../lib/table-api-form";
 export { defaultTableApiForm } from "../lib/table-api-form";
@@ -19,6 +23,7 @@ type TableApiComparePanelProps = {
   connectionPayload: ConnectionPayload | undefined;
   onFormChange: (next: TableApiFormState) => void;
   onRunRest: () => void;
+  onStopRest: () => void;
   onRunBoth: () => void;
   onTranslateNotice: (message: string) => void;
   /** Replace JDBC editor contents with approximate SQL from sysparms. */
@@ -34,6 +39,7 @@ export const TableApiComparePanel = ({
   connectionPayload,
   onFormChange,
   onRunRest,
+  onStopRest,
   onRunBoth,
   onTranslateNotice,
   onApplyApproximateSqlToJdbc,
@@ -123,16 +129,26 @@ export const TableApiComparePanel = ({
               <span class="text-info">Table API</span>
               <span class="text-subtle">— GET /api/now/table/…</span>
             </div>
-            <a
-              href={TABLE_API_DOCS}
-              target="_blank"
-              rel="noopener noreferrer"
-              class="text-[10px] text-accent underline-offset-2 hover:underline"
-            >
-              ServiceNow Table API reference
-            </a>
+            <div class="flex flex-wrap items-center gap-x-3 gap-y-0.5">
+              <a
+                href={TABLE_API_DOCS}
+                target="_blank"
+                rel="noopener noreferrer"
+                class="text-[10px] text-accent underline-offset-2 hover:underline"
+              >
+                ServiceNow Table API reference
+              </a>
+              <TableApiLimitsReferenceLink
+                form={form}
+                connectionPayload={connectionPayload}
+              />
+            </div>
           </div>
           <div class="flex flex-wrap items-center gap-2">
+            <TableApiLimitsAdvice
+              form={form}
+              connectionPayload={connectionPayload}
+            />
             <button
               type="button"
               class="btn px-2 py-1 text-[11px]"
@@ -266,6 +282,25 @@ export const TableApiComparePanel = ({
               </select>
             </label>
 
+            <label
+              class="flex items-center gap-2 text-[11px] text-subtle"
+              title="Use when ServiceNow returns “Pagination not supported” on long sysparm_query or many fields"
+            >
+              <input
+                type="checkbox"
+                checked={form.sysparm_suppress_pagination_header}
+                onChange={(e) =>
+                  patch({
+                    sysparm_suppress_pagination_header: (
+                      e.target as HTMLInputElement
+                    ).checked,
+                  })
+                }
+                disabled={busy}
+              />
+              sysparm_suppress_pagination_header
+            </label>
+
             <label class="flex items-center gap-2 text-[11px] text-subtle">
               <input
                 type="checkbox"
@@ -292,10 +327,21 @@ export const TableApiComparePanel = ({
           >
             {restRunning ? "REST…" : "Run Table API"}
           </button>
+          {restRunning ? (
+            <button
+              type="button"
+              class="btn border-danger/50 bg-danger/10 text-danger hover:border-danger hover:bg-danger/20 hover:text-danger focus-visible:ring-danger"
+              onClick={onStopRest}
+              title="Abort the Table API request (closes the browser connection)"
+              aria-label="Stop running Table API request"
+            >
+              Stop
+            </button>
+          ) : null}
           <button
             type="button"
             class="btn"
-            title="Run JDBC and Table API in parallel for timing comparison"
+            title="Run JDBC first, then Table API, for timing comparison"
             onClick={onRunBoth}
             disabled={
               busy ||

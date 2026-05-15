@@ -31,7 +31,16 @@ export const sanitizeQueryResult = (raw: unknown): QueryResult | null => {
     typeof rc === "number" && Number.isFinite(rc) && rc >= 0
       ? Math.floor(rc)
       : rows.length;
-  return { columns, rows, row_count };
+  const out: QueryResult = { columns, rows, row_count };
+  if (o.timing_only === true) out.timing_only = true;
+  const dm = o.duration_ms;
+  if (typeof dm === "number" && Number.isFinite(dm) && dm >= 0) {
+    out.duration_ms = Math.floor(dm);
+  }
+  if (typeof o.timing_note === "string" && o.timing_note.trim()) {
+    out.timing_note = o.timing_note.trim();
+  }
+  return out;
 };
 
 export const sanitizeResultsByTab = (

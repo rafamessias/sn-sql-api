@@ -139,7 +139,8 @@ export const LogsPanel = () => {
         and messages returned by the API.
       </p>
 
-      <div class="min-h-[min(28rem,calc(100dvh-14rem))] flex-1 overflow-auto rounded-lg border border-border bg-surface">
+      <div class="flex min-h-0 max-h-[calc(100dvh-14rem)] flex-1 flex-col overflow-hidden rounded-lg border border-border bg-surface">
+        <div class="min-h-0 flex-1 overflow-auto">
         {entries.length === 0 ? (
           <p class="px-4 py-12 text-center font-mono text-[12px] text-muted">
             No events yet. Run a query, open Schema, or switch connections to
@@ -188,6 +189,7 @@ export const LogsPanel = () => {
             </tbody>
           </table>
         )}
+        </div>
       </div>
     </section>
   );

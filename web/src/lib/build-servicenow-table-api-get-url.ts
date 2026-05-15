@@ -61,6 +61,9 @@ export function buildServiceNowTableApiGetUrl(
   if (form.sysparm_exclude_reference_link) {
     params.set("sysparm_exclude_reference_link", "true");
   }
+  if (form.sysparm_suppress_pagination_header) {
+    params.set("sysparm_suppress_pagination_header", "true");
+  }
   const view = form.sysparm_view.trim();
   if (view) params.set("sysparm_view", view);
 

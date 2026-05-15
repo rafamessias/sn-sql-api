@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import json
 import logging
@@ -221,12 +222,22 @@ class QueryRequest(BaseModel):
     query: str = Field(min_length=1)
     parameters: list[Any] | None = None
     connection: ConnectionPayload | None = None
+    timing_only: bool = Field(
+        default=False,
+        description=(
+            "When true, run the full JDBC fetch (same paging as a grid run) but do not "
+            "return row data — only row count and server duration."
+        ),
+    )
 
 
 class QueryResponse(BaseModel):
     columns: list[str]
     rows: list[list[Any]]
     row_count: int
+    timing_only: bool = False
+    duration_ms: int | None = None
+    timing_note: str | None = None
 
 
 class TablesRequest(BaseModel):
@@ -279,6 +290,14 @@ class TableApiRecordsRequest(BaseModel):
     sysparm_view: str | None = None
     sysparm_query_no_domain: bool | None = None
     sysparm_suppress_pagination_header: bool | None = None
+    timing_only: bool = Field(
+        default=False,
+        description=(
+            "When true, run the full Table API fetch with the same sysparms as a grid "
+            "run (paginating when sysparm_limit exceeds the per-request maximum) but "
+            "do not return row data — only row count and server duration."
+        ),
+    )
 
 
 class TableApiRecordsResponse(BaseModel):
@@ -288,6 +307,8 @@ class TableApiRecordsResponse(BaseModel):
     total_count: int | None = None
     duration_ms: int
     request_path: str
+    timing_only: bool = False
+    timing_note: str | None = None
 
 
 class HealthCheckRequest(BaseModel):
@@ -323,6 +344,7 @@ class AboutResponse(BaseModel):
 
 _EGRESS_PROBE_URL = "https://api.ipify.org?format=json"
 _EGRESS_PROBE_TIMEOUT_S = 8.0
+_HEALTH_CHECK_TIMEOUT_S = 25.0
 
 
 def verify_api_key(x_api_key: str | None = Header(default=None)) -> None:
@@ -851,12 +873,17 @@ def egress_ip() -> EgressIpResponse:
     return EgressIpResponse(error="Unexpected response from egress probe.")
 
 
+def _jdbc_health_probe(override: ConnectionOverride | None) -> None:
+    with get_connection(override):
+        pass
+
+
 @app.post(
     "/health/check",
     response_model=HealthCheckResponse,
     dependencies=[Depends(verify_api_key)],
 )
-def healthcheck_connection(
+async def healthcheck_connection(
     payload: HealthCheckRequest | None = None,
 ) -> HealthCheckResponse:
     override = _to_override(payload.connection) if payload else None
@@ -864,8 +891,16 @@ def healthcheck_connection(
         override.driver_class if override and override.driver_class else settings.sn_jdbc_driver_class
     )
     try:
-        with get_connection(override):
-            pass
+        await asyncio.wait_for(
+            asyncio.to_thread(_jdbc_health_probe, override),
+            timeout=_HEALTH_CHECK_TIMEOUT_S,
+        )
+    except TimeoutError:
+        return HealthCheckResponse(
+            status="error",
+            driver_class=driver_class,
+            error=f"JDBC health check timed out after {int(_HEALTH_CHECK_TIMEOUT_S)}s",
+        )
     except Exception as exc:
         return HealthCheckResponse(
             status="error",
@@ -916,6 +951,7 @@ def execute_query(payload: QueryRequest) -> QueryResponse:
             payload.query,
             payload.parameters,
             _to_override(payload.connection),
+            timing_only=payload.timing_only,
         )
         return QueryResponse(**result)
     except Exception as exc:
@@ -998,6 +1034,7 @@ def table_api_records(payload: TableApiRecordsRequest) -> TableApiRecordsRespons
             sysparm_view=payload.sysparm_view,
             sysparm_query_no_domain=payload.sysparm_query_no_domain,
             sysparm_suppress_pagination_header=payload.sysparm_suppress_pagination_header,
+            timing_only=payload.timing_only,
         )
         return TableApiRecordsResponse(**data)
     except ValueError as exc:
