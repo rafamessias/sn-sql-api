@@ -23,6 +23,7 @@ from src.jdbc_client import (
     list_tables,
     run_query,
 )
+from src.table_api_client import fetch_table_api_records
 
 STATIC_DIR = Path(__file__).parent / "static"
 DIST_DIR = STATIC_DIR / "dist"
@@ -262,6 +263,31 @@ class ColumnInfo(BaseModel):
 class ColumnsResponse(BaseModel):
     table: str
     columns: list[ColumnInfo]
+
+
+class TableApiRecordsRequest(BaseModel):
+    """GET ``/api/now/table/{table}`` — query parameters mirror ServiceNow Table API."""
+
+    table: str = Field(min_length=1)
+    connection: ConnectionPayload | None = None
+    sysparm_query: str | None = None
+    sysparm_fields: str | None = None
+    sysparm_limit: int | None = Field(default=None, ge=1)
+    sysparm_offset: int | None = Field(default=None, ge=0)
+    sysparm_display_value: str | None = None
+    sysparm_exclude_reference_link: bool | None = None
+    sysparm_view: str | None = None
+    sysparm_query_no_domain: bool | None = None
+    sysparm_suppress_pagination_header: bool | None = None
+
+
+class TableApiRecordsResponse(BaseModel):
+    columns: list[str]
+    rows: list[list[Any]]
+    row_count: int
+    total_count: int | None = None
+    duration_ms: int
+    request_path: str
 
 
 class HealthCheckRequest(BaseModel):
@@ -947,6 +973,45 @@ def fetch_columns(payload: ColumnsRequest) -> ColumnsResponse:
     return ColumnsResponse(table=payload.table, columns=columns)
 
 
+@app.post(
+    "/table-api/records",
+    response_model=TableApiRecordsResponse,
+    dependencies=[Depends(verify_api_key)],
+    summary="Table API GET (proxy)",
+    description=(
+        "Proxies ``GET /api/now/table/{table}`` on the instance using Basic auth with the "
+        "same credentials as JDBC. Supports standard ``sysparm_*`` query parameters — see "
+        "the ServiceNow Table API reference."
+    ),
+)
+def table_api_records(payload: TableApiRecordsRequest) -> TableApiRecordsResponse:
+    try:
+        data = fetch_table_api_records(
+            table=payload.table,
+            override=_to_override(payload.connection),
+            sysparm_query=payload.sysparm_query,
+            sysparm_fields=payload.sysparm_fields,
+            sysparm_limit=payload.sysparm_limit,
+            sysparm_offset=payload.sysparm_offset,
+            sysparm_display_value=payload.sysparm_display_value,
+            sysparm_exclude_reference_link=payload.sysparm_exclude_reference_link,
+            sysparm_view=payload.sysparm_view,
+            sysparm_query_no_domain=payload.sysparm_query_no_domain,
+            sysparm_suppress_pagination_header=payload.sysparm_suppress_pagination_header,
+        )
+        return TableApiRecordsResponse(**data)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Table API request failed: {exc}",
+        ) from exc
+
+
 _DEV_FALLBACK_HTML = """<!doctype html>
 <html lang="en">
   <head>
@@ -999,7 +1064,8 @@ _DEV_FALLBACK_HTML = """<!doctype html>
       </p>
       <p>
         Then open <a href="http://localhost:5173">http://localhost:5173</a>
-        — it proxies <code>/query</code>, <code>/schema/*</code>,
+        — it proxies <code>/query</code>, <code>/table-api/*</code>,
+        <code>/schema/*</code>,
         <code>/health</code>, <code>/egress-ip</code>, and
         <code>/about</code> to this API.
       </p>
@@ -1086,6 +1152,7 @@ _API_ONLY_HTML = """<!doctype html>
         <li><a href="/health">/health</a> &mdash; lightweight liveness</li>
         <li><code>POST /health/check</code> &mdash; JDBC handshake</li>
         <li><code>POST /query</code> &mdash; run SQL</li>
+        <li><code>POST /table-api/records</code> &mdash; Table API GET proxy</li>
         <li><code>POST /schema/tables</code> &middot; <code>POST /schema/columns</code></li>
         <li><a href="/about">/about</a> &mdash; credits &amp; license</li>
       </ul>

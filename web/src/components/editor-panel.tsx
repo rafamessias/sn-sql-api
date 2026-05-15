@@ -9,7 +9,7 @@ import { Editor } from "./editor";
 import { EditorTabsBar } from "./editor-tabs-bar";
 import { ResultsTable } from "./results-table";
 import { StatusBar } from "./status-bar";
-import { isAbortError, runQuery, type QueryResult } from "../lib/api";
+import { isAbortError, runQuery, runTableApiRecords, type QueryResult, type TableApiRecordsResponse } from "../lib/api";
 import { cn } from "../lib/cn";
 import {
   downloadTextFile,
@@ -27,7 +27,19 @@ import {
   loadQueryResultsByTab,
   persistQueryResultsByTab,
 } from "../lib/editor-query-results-storage";
+import {
+  clearTableApiResultsByTabStorage,
+  loadTableApiFormsByTab,
+  loadTableApiResultsByTab,
+  persistTableApiFormsByTab,
+  persistTableApiResultsByTab,
+} from "../lib/editor-table-api-storage";
 import type { EditorTab } from "../lib/editor-tabs";
+import {
+  defaultTableApiForm,
+  type TableApiFormState,
+} from "../lib/table-api-form";
+import { TableApiComparePanel } from "./table-api-compare-panel";
 
 type Status =
   | { kind: "idle"; message: string }
@@ -36,6 +48,36 @@ type Status =
   | { kind: "error"; message: string; copyText?: string };
 
 const INITIAL_STATUS: Status = { kind: "idle", message: "Ready." };
+
+const INITIAL_TABLE_API_STATUS: Status = {
+  kind: "idle",
+  message: "Table API idle.",
+};
+
+/** Shown as native tooltip on the JDBC status line (explains the single duration). */
+const JDBC_STATUS_TIME_TOOLTIP =
+  "One duration: full round-trip in this browser (UI → this API → JDBC on the server → rows back). The API does not return a separate server-only JDBC time.";
+
+/** Shown as native tooltip on the Table API status line (browser vs instance vs X-Total-Count). */
+const TABLE_API_STATUS_TIME_TOOLTIP =
+  "Browser: full round-trip in this browser for this request. Instance: time for this API to call ServiceNow’s Table API. X-Total-Count (when shown): ServiceNow header = rows matching your filter, often larger than the rows on this page.";
+
+type CompareFastLane = "jdbc" | "rest" | "tie";
+
+async function timedRequest<T>(
+  fn: () => Promise<T>,
+): Promise<
+  | { ok: true; value: T; ms: number }
+  | { ok: false; reason: unknown; ms: number }
+> {
+  const t0 = performance.now();
+  try {
+    const value = await fn();
+    return { ok: true, value, ms: Math.round(performance.now() - t0) };
+  } catch (reason) {
+    return { ok: false, reason, ms: Math.round(performance.now() - t0) };
+  }
+}
 
 type EditorPanelProps = {
   tabs: EditorTab[];
@@ -47,6 +89,14 @@ type EditorPanelProps = {
   onAddTab: () => void;
   onActiveQueryChange: (next: string) => void;
   onLastSuccessfulRunDuration?: (tabId: string, durationMs: number) => void;
+  /** Persist last successful Table API timings on the tab (browser + instance ms). */
+  onLastSuccessfulTableApiRun?: (
+    tabId: string,
+    browserMs: number,
+    instanceMs: number,
+  ) => void;
+  /** Split JDBC + Table API layout for the active tab (stored on the tab). */
+  onCompareTableApiChange: (enabled: boolean) => void;
   connectionPayload: ConnectionPayload | undefined;
   connectionLabel: string;
   schemaTables?: readonly string[];
@@ -62,10 +112,14 @@ export const EditorPanel = ({
   onAddTab,
   onActiveQueryChange,
   onLastSuccessfulRunDuration,
+  onLastSuccessfulTableApiRun,
+  onCompareTableApiChange,
   connectionPayload,
   connectionLabel,
   schemaTables,
 }: EditorPanelProps) => {
+  const compareMode = activeTab.compareTableApi === true;
+
   // Per-tab results, restored from localStorage so they survive console tab
   // switches and full reloads. Very large payloads may fail to persist (quota).
   const [resultsByTab, setResultsByTab] = useState<
@@ -74,6 +128,21 @@ export const EditorPanel = ({
   const [statusByTab, setStatusByTab] = useState<Record<string, Status>>({});
   const [resultsExpandedByTab, setResultsExpandedByTab] = useState<
     Record<string, boolean>
+  >({});
+  const [tableApiFormByTab, setTableApiFormByTab] = useState<
+    Record<string, TableApiFormState>
+  >(() => loadTableApiFormsByTab());
+  const [tableApiResultsByTab, setTableApiResultsByTab] = useState<
+    Record<string, TableApiRecordsResponse | null>
+  >(() => loadTableApiResultsByTab());
+  const [tableApiStatusByTab, setTableApiStatusByTab] = useState<
+    Record<string, Status>
+  >({});
+  const [tableApiBusyByTab, setTableApiBusyByTab] = useState<
+    Record<string, boolean>
+  >({});
+  const [compareFastLaneByTab, setCompareFastLaneByTab] = useState<
+    Record<string, CompareFastLane | null>
   >({});
   const abortRefByTab = useRef<Map<string, AbortController>>(new Map());
   const runningTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -151,9 +220,83 @@ export const EditorPanel = ({
     persistQueryResultsByTab(filtered);
   }, [resultsByTab, tabIdsKey]);
 
+  useEffect(() => {
+    const tabIds = new Set(
+      tabIdsKey.length > 0 ? tabIdsKey.split("|") : [],
+    );
+    setTableApiFormByTab((prev) => {
+      const next: Record<string, TableApiFormState> = {};
+      for (const id of tabIds) {
+        if (Object.prototype.hasOwnProperty.call(prev, id)) {
+          next[id] = prev[id]!;
+        }
+      }
+      const prevKeys = Object.keys(prev);
+      const nextKeys = Object.keys(next);
+      if (
+        prevKeys.length === nextKeys.length &&
+        prevKeys.every((k) => prev[k] === next[k])
+      ) {
+        return prev;
+      }
+      return next;
+    });
+  }, [tabIdsKey]);
+
+  useEffect(() => {
+    const tabIds = new Set(
+      tabIdsKey.length > 0 ? tabIdsKey.split("|") : [],
+    );
+    setTableApiResultsByTab((prev) => {
+      const next: Record<string, TableApiRecordsResponse | null> = {};
+      for (const id of tabIds) {
+        if (Object.prototype.hasOwnProperty.call(prev, id)) {
+          next[id] = prev[id]!;
+        }
+      }
+      const prevKeys = Object.keys(prev);
+      const nextKeys = Object.keys(next);
+      if (
+        prevKeys.length === nextKeys.length &&
+        prevKeys.every((k) => prev[k] === next[k])
+      ) {
+        return prev;
+      }
+      return next;
+    });
+  }, [tabIdsKey]);
+
+  useEffect(() => {
+    const tabIds = new Set(
+      tabIdsKey.length > 0 ? tabIdsKey.split("|") : [],
+    );
+    const filtered: Record<string, TableApiFormState> = {};
+    for (const id of tabIds) {
+      if (Object.prototype.hasOwnProperty.call(tableApiFormByTab, id)) {
+        filtered[id] = tableApiFormByTab[id]!;
+      }
+    }
+    persistTableApiFormsByTab(filtered);
+  }, [tableApiFormByTab, tabIdsKey]);
+
+  useEffect(() => {
+    const tabIds = new Set(
+      tabIdsKey.length > 0 ? tabIdsKey.split("|") : [],
+    );
+    const filtered: Record<string, TableApiRecordsResponse | null> = {};
+    for (const id of tabIds) {
+      if (Object.prototype.hasOwnProperty.call(tableApiResultsByTab, id)) {
+        filtered[id] = tableApiResultsByTab[id]!;
+      }
+    }
+    persistTableApiResultsByTab(filtered);
+  }, [tableApiResultsByTab, tabIdsKey]);
+
   const hasStoredResults = useMemo(
-    () => Object.values(resultsByTab).some(Boolean),
-    [resultsByTab],
+    () =>
+      Object.values(resultsByTab).some(Boolean) ||
+      Object.values(tableApiResultsByTab).some(Boolean),
+    [resultsByTab, tableApiResultsByTab],
   );
 
   const result = resultsByTab[activeId] ?? null;
@@ -168,9 +311,68 @@ export const EditorPanel = ({
         }
       : INITIAL_STATUS);
 
+  const tableApiForm = useMemo(
+    () => tableApiFormByTab[activeId] ?? defaultTableApiForm(),
+    [tableApiFormByTab, activeId],
+  );
+
+  const tableApiResult = tableApiResultsByTab[activeId] ?? null;
+  const tableApiStatusFromMemory = tableApiStatusByTab[activeId];
+  const tableApiStatusIdleFromTab: Status | null =
+    activeTab.lastTableApiBrowserMs != null &&
+    activeTab.lastTableApiInstanceMs != null
+      ? {
+          kind: "idle",
+          message: `Ready. Last run: browser ${formatDurationMs(activeTab.lastTableApiBrowserMs)} · instance ${formatDurationMs(activeTab.lastTableApiInstanceMs)}.`,
+        }
+      : null;
+  const tableApiStatus =
+    tableApiStatusFromMemory ??
+    tableApiStatusIdleFromTab ??
+    INITIAL_TABLE_API_STATUS;
+  const tableApiBusy = tableApiBusyByTab[activeId] ?? false;
+
+  const compareFastLane = compareFastLaneByTab[activeId] ?? null;
+
+  const jdbcCompareBadge = useMemo(() => {
+    if (!compareMode) return null;
+    if (compareFastLane === "jdbc" && status.kind === "ok") return "Faster";
+    if (
+      compareFastLane === "tie" &&
+      status.kind === "ok" &&
+      tableApiStatus.kind === "ok"
+    ) {
+      return "Tie";
+    }
+    return null;
+  }, [compareMode, compareFastLane, status.kind, tableApiStatus.kind]);
+
+  const restCompareBadge = useMemo(() => {
+    if (!compareMode) return null;
+    if (compareFastLane === "rest" && tableApiStatus.kind === "ok")
+      return "Faster";
+    if (
+      compareFastLane === "tie" &&
+      status.kind === "ok" &&
+      tableApiStatus.kind === "ok"
+    ) {
+      return "Tie";
+    }
+    return null;
+  }, [compareMode, compareFastLane, status.kind, tableApiStatus.kind]);
+
+  const showAnyResult = Boolean(result) || Boolean(compareMode && tableApiResult);
+
   const setActiveResult = useCallback(
     (next: QueryResult | null) => {
       setResultsByTab((prev) => ({ ...prev, [activeId]: next }));
+    },
+    [activeId],
+  );
+
+  const setActiveTableApiStatus = useCallback(
+    (next: Status) => {
+      setTableApiStatusByTab((prev) => ({ ...prev, [activeId]: next }));
     },
     [activeId],
   );
@@ -180,6 +382,34 @@ export const EditorPanel = ({
       setStatusByTab((prev) => ({ ...prev, [activeId]: next }));
     },
     [activeId],
+  );
+
+  const handleTranslateNotice = useCallback(
+    (message: string) => {
+      setActiveStatus({ kind: "ok", message });
+    },
+    [setActiveStatus],
+  );
+
+  const buildTableApiRequestBody = useCallback(
+    (form: TableApiFormState): Parameters<typeof runTableApiRecords>[0] => {
+      const lim = Number.parseInt(form.sysparm_limit.trim(), 10);
+      const off = Number.parseInt(form.sysparm_offset.trim(), 10);
+      return {
+        table: form.table.trim(),
+        connection: connectionPayload,
+        sysparm_query: form.sysparm_query.trim() || undefined,
+        sysparm_fields: form.sysparm_fields.trim() || undefined,
+        sysparm_limit: Number.isFinite(lim) && lim > 0 ? lim : undefined,
+        sysparm_offset: Number.isFinite(off) && off >= 0 ? off : undefined,
+        sysparm_display_value: form.sysparm_display_value || undefined,
+        sysparm_exclude_reference_link: form.sysparm_exclude_reference_link
+          ? true
+          : undefined,
+        sysparm_view: form.sysparm_view.trim() || undefined,
+      };
+    },
+    [connectionPayload],
   );
 
   const handleRun = useCallback(async () => {
@@ -195,6 +425,8 @@ export const EditorPanel = ({
     abortRefByTab.current.get(tabId)?.abort();
     const controller = new AbortController();
     abortRefByTab.current.set(tabId, controller);
+    setTableApiBusyByTab((prev) => ({ ...prev, [tabId]: false }));
+    setCompareFastLaneByTab((prev) => ({ ...prev, [tabId]: null }));
 
     clearRunningTimer();
 
@@ -251,6 +483,7 @@ export const EditorPanel = ({
       });
     } finally {
       clearRunningTimer();
+      setTableApiBusyByTab((prev) => ({ ...prev, [tabId]: false }));
     }
   }, [
     activeTab.query,
@@ -259,17 +492,289 @@ export const EditorPanel = ({
     connectionPayload,
     clearRunningTimer,
     onLastSuccessfulRunDuration,
-    setActiveStatus,
   ]);
+
+  const handleRunTableApi = useCallback(async () => {
+    const form = tableApiFormByTab[activeId] ?? defaultTableApiForm();
+    if (!form.table.trim()) {
+      setActiveTableApiStatus({
+        kind: "error",
+        message: "Set a table API name before running the Table API.",
+      });
+      return;
+    }
+
+    const tabId = activeId;
+    const label = connectionLabel;
+
+    abortRefByTab.current.get(tabId)?.abort();
+    const controller = new AbortController();
+    abortRefByTab.current.set(tabId, controller);
+    setCompareFastLaneByTab((prev) => ({ ...prev, [tabId]: null }));
+
+    clearRunningTimer();
+
+    const setTabTableStatus = (next: Status) => {
+      setTableApiStatusByTab((prev) => ({ ...prev, [tabId]: next }));
+    };
+    const setTabTableResult = (next: TableApiRecordsResponse | null) => {
+      setTableApiResultsByTab((prev) => ({ ...prev, [tabId]: next }));
+    };
+
+    const started = performance.now();
+    setTableApiBusyByTab((prev) => ({ ...prev, [tabId]: true }));
+
+    const tickRunningMessage = () => {
+      const elapsed = performance.now() - started;
+      setTabTableStatus({
+        kind: "running",
+        message: `Table API ${label}… (${formatRunningClock(elapsed)})`,
+      });
+    };
+    tickRunningMessage();
+    runningTimerRef.current = globalThis.setInterval(tickRunningMessage, 250);
+    runningForTabIdRef.current = tabId;
+
+    try {
+      const data = await runTableApiRecords(
+        buildTableApiRequestBody(form),
+        null,
+        controller.signal,
+      );
+      const clientMs = Math.round(performance.now() - started);
+      setTabTableResult(data);
+      onLastSuccessfulTableApiRun?.(tabId, clientMs, data.duration_ms);
+      const totalHint =
+        data.total_count != null
+          ? ` · X-Total-Count ${data.total_count.toLocaleString()}`
+          : "";
+      setTabTableStatus({
+        kind: "ok",
+        message: `${data.row_count.toLocaleString()} row(s) · instance ${data.duration_ms}ms · browser ${formatDurationMs(clientMs)}${totalHint} · ${label}`,
+      });
+    } catch (err) {
+      if (controller.signal.aborted || isAbortError(err)) {
+        const elapsed = Math.round(performance.now() - started);
+        setTabTableStatus({
+          kind: "idle",
+          message: `Table API stopped after ${formatDurationMs(elapsed)} · ${label}`,
+        });
+        return;
+      }
+      const elapsed = Math.round(performance.now() - started);
+      const message = err instanceof Error ? err.message : "Unknown error";
+      setTabTableResult(null);
+      setTabTableStatus({
+        kind: "error",
+        message: `Table API error in ${formatDurationMs(elapsed)} — ${message}`,
+        copyText: message,
+      });
+    } finally {
+      clearRunningTimer();
+      runningForTabIdRef.current = null;
+      setTableApiBusyByTab((prev) => ({ ...prev, [tabId]: false }));
+    }
+  }, [
+    activeId,
+    buildTableApiRequestBody,
+    clearRunningTimer,
+    connectionLabel,
+    onLastSuccessfulTableApiRun,
+    tableApiFormByTab,
+  ]);
+
+  const handleRunBoth = useCallback(async () => {
+    const trimmed = activeTab.query.trim();
+    const form = tableApiFormByTab[activeId] ?? defaultTableApiForm();
+    if (!trimmed) {
+      setActiveStatus({ kind: "error", message: "Type a JDBC query first." });
+      return;
+    }
+    if (!form.table.trim()) {
+      setActiveStatus({
+        kind: "error",
+        message: "Set a Table API name (right panel) before comparing.",
+      });
+      return;
+    }
+
+    const tabId = activeId;
+    const label = connectionLabel;
+
+    abortRefByTab.current.get(tabId)?.abort();
+    const controller = new AbortController();
+    abortRefByTab.current.set(tabId, controller);
+    setCompareFastLaneByTab((prev) => ({ ...prev, [tabId]: null }));
+
+    clearRunningTimer();
+
+    const setTabStatus = (next: Status) => {
+      setStatusByTab((prev) => ({ ...prev, [tabId]: next }));
+    };
+    const setTabResult = (next: QueryResult | null) => {
+      setResultsByTab((prev) => ({ ...prev, [tabId]: next }));
+    };
+    const setTabTableStatus = (next: Status) => {
+      setTableApiStatusByTab((prev) => ({ ...prev, [tabId]: next }));
+    };
+    const setTabTableResult = (next: TableApiRecordsResponse | null) => {
+      setTableApiResultsByTab((prev) => ({ ...prev, [tabId]: next }));
+    };
+
+    const started = performance.now();
+    runningForTabIdRef.current = tabId;
+    setTableApiBusyByTab((prev) => ({ ...prev, [tabId]: true }));
+
+    const tickRunningMessage = () => {
+      const elapsed = performance.now() - started;
+      const msg = `JDBC + Table API · ${label}… (${formatRunningClock(elapsed)})`;
+      setTabStatus({ kind: "running", message: msg });
+      setTabTableStatus({ kind: "running", message: msg });
+    };
+    tickRunningMessage();
+    runningTimerRef.current = globalThis.setInterval(tickRunningMessage, 250);
+
+    try {
+      const [jdbcR, restR] = await Promise.all([
+        timedRequest(() =>
+          runQuery(trimmed, connectionPayload, null, controller.signal),
+        ),
+        timedRequest(() =>
+          runTableApiRecords(
+            buildTableApiRequestBody(form),
+            null,
+            controller.signal,
+          ),
+        ),
+      ]);
+
+      if (jdbcR.ok) {
+        setTabResult(jdbcR.value);
+        onLastSuccessfulRunDuration?.(tabId, jdbcR.ms);
+      } else {
+        setTabResult(null);
+      }
+      if (restR.ok) {
+        setTabTableResult(restR.value);
+        onLastSuccessfulTableApiRun?.(
+          tabId,
+          restR.ms,
+          restR.value.duration_ms,
+        );
+      } else {
+        setTabTableResult(null);
+      }
+
+      let fast: CompareFastLane | null = null;
+      if (jdbcR.ok && restR.ok) {
+        if (jdbcR.ms < restR.ms) {
+          fast = "jdbc";
+        } else if (restR.ms < jdbcR.ms) {
+          fast = "rest";
+        } else {
+          fast = "tie";
+        }
+      }
+      setCompareFastLaneByTab((prev) => ({ ...prev, [tabId]: fast }));
+
+      const jdbcKind: Status["kind"] = jdbcR.ok ? "ok" : "error";
+      const jdbcMsg = jdbcR.ok
+        ? `${jdbcR.value.row_count.toLocaleString()} row(s) in ${formatDurationMs(jdbcR.ms)} (browser) · ${label}`
+        : `Error after ${formatDurationMs(jdbcR.ms)} — ${
+            jdbcR.reason instanceof Error
+              ? jdbcR.reason.message
+              : String(jdbcR.reason)
+          }`;
+
+      const restKind: Status["kind"] = restR.ok ? "ok" : "error";
+      const restMsg = restR.ok
+        ? `${restR.value.row_count.toLocaleString()} row(s) · browser ${formatDurationMs(restR.ms)} · instance ${restR.value.duration_ms}ms${
+            restR.value.total_count != null
+              ? ` · X-Total-Count ${restR.value.total_count.toLocaleString()}`
+              : ""
+          } · ${label}`
+        : `Error after ${formatDurationMs(restR.ms)} — ${
+            restR.reason instanceof Error
+              ? restR.reason.message
+              : String(restR.reason)
+          }`;
+
+      setTabStatus({
+        kind: jdbcKind,
+        message: jdbcMsg,
+        copyText: jdbcKind === "error" ? jdbcMsg : undefined,
+      });
+      setTabTableStatus({
+        kind: restKind,
+        message: restMsg,
+        copyText: restKind === "error" ? restMsg : undefined,
+      });
+    } catch (err) {
+      if (controller.signal.aborted || isAbortError(err)) {
+        const elapsed = Math.round(performance.now() - started);
+        const msg = `Stopped after ${formatDurationMs(elapsed)} · ${label}`;
+        setCompareFastLaneByTab((prev) => ({ ...prev, [tabId]: null }));
+        setTabStatus({ kind: "idle", message: msg });
+        setTabTableStatus({ kind: "idle", message: msg });
+        return;
+      }
+      const message = err instanceof Error ? err.message : String(err);
+      setCompareFastLaneByTab((prev) => ({ ...prev, [tabId]: null }));
+      setTabStatus({
+        kind: "error",
+        message,
+        copyText: message,
+      });
+      setTabTableStatus({
+        kind: "error",
+        message,
+        copyText: message,
+      });
+    } finally {
+      clearRunningTimer();
+      runningForTabIdRef.current = null;
+      setTableApiBusyByTab((prev) => ({ ...prev, [tabId]: false }));
+    }
+  }, [
+    activeId,
+    activeTab.query,
+    buildTableApiRequestBody,
+    clearRunningTimer,
+    connectionLabel,
+    connectionPayload,
+    onLastSuccessfulRunDuration,
+    onLastSuccessfulTableApiRun,
+    tableApiFormByTab,
+  ]);
+
+  const handleToggleCompareMode = useCallback(
+    (next: boolean) => {
+      onCompareTableApiChange(next);
+    },
+    [onCompareTableApiChange],
+  );
 
   const handleStop = useCallback(() => {
     abortRefByTab.current.get(activeId)?.abort();
+    setTableApiBusyByTab((prev) => ({ ...prev, [activeId]: false }));
   }, [activeId]);
 
   const handleClear = useCallback(() => {
     abortRefByTab.current.get(activeId)?.abort();
     onActiveQueryChange("");
     setActiveResult(null);
+    setTableApiResultsByTab((prev) => {
+      if (!(activeId in prev)) return prev;
+      const next = { ...prev };
+      delete next[activeId];
+      return next;
+    });
+    setTableApiStatusByTab((prev) => {
+      if (!(activeId in prev)) return prev;
+      const next = { ...prev };
+      delete next[activeId];
+      return next;
+    });
     setResultsExpandedByTab((prev) => {
       if (!(activeId in prev)) return prev;
       const next = { ...prev };
@@ -284,9 +789,17 @@ export const EditorPanel = ({
           }
         : INITIAL_STATUS,
     );
+    setCompareFastLaneByTab((prev) => {
+      if (!(activeId in prev)) return prev;
+      const next = { ...prev };
+      delete next[activeId];
+      return next;
+    });
   }, [
     activeId,
     activeTab.lastRunDurationMs,
+    activeTab.lastTableApiBrowserMs,
+    activeTab.lastTableApiInstanceMs,
     onActiveQueryChange,
     setActiveResult,
     setActiveStatus,
@@ -306,22 +819,6 @@ export const EditorPanel = ({
       setActiveStatus({ kind: "error", message: `Copy failed: ${message}` });
     }
   }, [activeTab.query, setActiveStatus]);
-
-  const handleDownloadSql = useCallback(() => {
-    const text = activeTab.query;
-    if (text.trim().length === 0) return;
-    const stem = sanitizeDownloadStem(activeTab.name);
-    try {
-      downloadTextFile(`${stem}.sql`, text, "application/sql;charset=utf-8");
-      setActiveStatus({
-        kind: "ok",
-        message: `Downloaded ${stem}.sql.`,
-      });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      setActiveStatus({ kind: "error", message: `Download failed: ${message}` });
-    }
-  }, [activeTab.name, activeTab.query, setActiveStatus]);
 
   const handleDownloadTxt = useCallback(() => {
     const text = activeTab.query;
@@ -365,6 +862,36 @@ export const EditorPanel = ({
         delete next[id];
         return next;
       });
+      setTableApiFormByTab((prev) => {
+        if (!(id in prev)) return prev;
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+      setTableApiResultsByTab((prev) => {
+        if (!(id in prev)) return prev;
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+      setTableApiStatusByTab((prev) => {
+        if (!(id in prev)) return prev;
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+      setTableApiBusyByTab((prev) => {
+        if (!(id in prev)) return prev;
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+      setCompareFastLaneByTab((prev) => {
+        if (!(id in prev)) return prev;
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
       onCloseTab(id);
     },
     [clearRunningTimer, onCloseTab],
@@ -379,9 +906,13 @@ export const EditorPanel = ({
 
   const handleClearStoredResults = useCallback(() => {
     clearQueryResultsByTabStorage();
+    clearTableApiResultsByTabStorage();
     setResultsByTab({});
     setStatusByTab({});
     setResultsExpandedByTab({});
+    setTableApiResultsByTab({});
+    setTableApiStatusByTab({});
+    setCompareFastLaneByTab({});
     setActiveStatus({
       kind: "ok",
       message: "Cleared saved result grids from this browser.",
@@ -389,137 +920,296 @@ export const EditorPanel = ({
   }, [setActiveStatus]);
 
   const editorUnderlayHidden = Boolean(result && resultsExpanded);
+  const isDualJdbcRest =
+    compareMode && Boolean(result) && Boolean(tableApiResult);
+  const showExpandedOverlay = Boolean(result && resultsExpanded && !isDualJdbcRest);
+
+  const editorCommonProps = {
+    query: activeTab.query,
+    onQueryChange: onActiveQueryChange,
+    isRunning: status.kind === "running",
+    onRun: handleRun,
+    onStop: handleStop,
+    onClear: handleClear,
+    onCopySql: handleCopySql,
+    onDownloadTxt: handleDownloadTxt,
+    schemaTables,
+    editorSectionMinHeightPx,
+    onAdjustEditorSectionHeight: adjustEditorSectionMinHeight,
+  };
 
   return (
-    <section class="grid min-h-0 min-w-0 flex-1 grid-rows-[auto_minmax(0,1fr)] gap-4">
-      <EditorTabsBar
-        tabs={tabs}
-        activeId={activeId}
-        onSelect={onSelectTab}
-        onClose={handleCloseTab}
-        onRename={onRenameTab}
-        onAdd={onAddTab}
-      />
+    <section class="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
+      <div class="flex shrink-0 flex-col gap-2">
+        <EditorTabsBar
+          tabs={tabs}
+          activeId={activeId}
+          onSelect={onSelectTab}
+          onClose={handleCloseTab}
+          onRename={onRenameTab}
+          onAdd={onAddTab}
+        />
+        <label class="flex cursor-pointer select-none items-center gap-2 rounded-md border border-border/60 bg-surface-2/80 px-3 py-2 text-[12px] text-muted hover:border-border">
+          <input
+            type="checkbox"
+            class="rounded border-border"
+            checked={compareMode}
+            onChange={(e) =>
+              handleToggleCompareMode((e.target as HTMLInputElement).checked)
+            }
+          />
+          Split view: compare JDBC with Table API (REST)
+        </label>
+      </div>
 
       <div class="relative isolate flex min-h-0 min-w-0 flex-1 flex-col gap-4">
-        {!result ? (
+        {!showAnyResult ? (
           <>
             <div
-              class="flex min-h-0 min-w-0 flex-1 flex-col"
+              class={cn(
+                "grid min-h-0 min-w-0 flex-1 gap-3",
+                compareMode ? "xl:grid-cols-2" : "grid-cols-1",
+              )}
               style={{ minHeight: `${editorSectionMinHeightPx}px` }}
             >
-              <Editor
-                query={activeTab.query}
-                onQueryChange={onActiveQueryChange}
-                isRunning={status.kind === "running"}
-                onRun={handleRun}
-                onStop={handleStop}
-                onClear={handleClear}
-                onCopySql={handleCopySql}
-                onDownloadSql={handleDownloadSql}
-                onDownloadTxt={handleDownloadTxt}
-                schemaTables={schemaTables}
-                editorSectionMinHeightPx={editorSectionMinHeightPx}
-                onAdjustEditorSectionHeight={adjustEditorSectionMinHeight}
-              />
-            </div>
-            <div class="shrink-0 flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
-              <div class="min-w-0 flex-1">
-                <StatusBar
-                  kind={status.kind}
-                  message={status.message}
-                  errorCopyText={
-                    status.kind === "error"
-                      ? (status.copyText ?? status.message)
-                      : undefined
+              <Editor {...editorCommonProps} />
+              {compareMode ? (
+                <TableApiComparePanel
+                  sqlText={activeTab.query}
+                  form={tableApiForm}
+                  onFormChange={(next) =>
+                    setTableApiFormByTab((prev) => ({
+                      ...prev,
+                      [activeId]: next,
+                    }))
                   }
+                  onRunRest={handleRunTableApi}
+                  onRunBoth={handleRunBoth}
+                  onTranslateNotice={handleTranslateNotice}
+                  restRunning={tableApiBusy}
+                  jdbcRunning={status.kind === "running"}
+                  disableRestRun={false}
                 />
-              </div>
-              {hasStoredResults ? (
-                <button
-                  type="button"
-                  class="btn shrink-0 self-end px-2 py-0.5 text-[11px] text-muted sm:self-auto"
-                  onClick={handleClearStoredResults}
-                  title="Remove every saved result grid from localStorage (all query tabs)"
-                >
-                  Clear saved results
-                </button>
               ) : null}
             </div>
-            <div class="flex min-h-0 min-w-0 flex-[2] items-center justify-center rounded-lg border border-dashed border-border bg-surface/50 text-sm text-muted">
-              Run a query to see results here.
+            <div class="flex min-h-0 w-full flex-col gap-2 shrink-0">
+              <div
+                class={cn(
+                  "grid min-w-0 w-full gap-3",
+                  compareMode ? "xl:grid-cols-2" : "grid-cols-1",
+                )}
+              >
+                <div class="flex min-w-0 flex-col gap-1">
+                  {compareMode ? (
+                    <span class="font-mono text-[10px] uppercase tracking-wide text-subtle">
+                      JDBC
+                    </span>
+                  ) : null}
+                  <StatusBar
+                    kind={status.kind}
+                    message={status.message}
+                    messageTooltip={JDBC_STATUS_TIME_TOOLTIP}
+                    badge={jdbcCompareBadge}
+                    errorCopyText={
+                      status.kind === "error"
+                        ? (status.copyText ?? status.message)
+                        : undefined
+                    }
+                  />
+                </div>
+                {compareMode ? (
+                  <div class="flex min-w-0 flex-col gap-1">
+                    <span class="font-mono text-[10px] uppercase tracking-wide text-subtle">
+                      Table API
+                    </span>
+                    <StatusBar
+                      kind={tableApiStatus.kind}
+                      message={tableApiStatus.message}
+                      messageTooltip={TABLE_API_STATUS_TIME_TOOLTIP}
+                      badge={restCompareBadge}
+                      errorCopyText={
+                        tableApiStatus.kind === "error"
+                          ? (tableApiStatus.copyText ?? tableApiStatus.message)
+                          : undefined
+                      }
+                    />
+                  </div>
+                ) : null}
+              </div>
+              {hasStoredResults ? (
+                <div class="flex justify-end">
+                  <button
+                    type="button"
+                    class="btn px-2 py-0.5 text-[11px] text-muted"
+                    onClick={handleClearStoredResults}
+                    title="Remove every saved JDBC and Table API result grid from localStorage (all query tabs)"
+                  >
+                    Clear saved results
+                  </button>
+                </div>
+              ) : null}
+            </div>
+            <div class="flex min-h-0 min-w-0 flex-[2] items-center justify-center rounded-lg border border-dashed border-border bg-surface/50 px-4 text-center text-sm text-muted">
+              Run a JDBC query, or enable compare and run the Table API, to see
+              results here.
             </div>
           </>
         ) : (
           <>
             <div
               class={cn(
-                "min-w-0 shrink-0",
+                "grid min-h-0 min-w-0 shrink-0 gap-3",
+                compareMode ? "xl:grid-cols-2" : "grid-cols-1",
                 editorUnderlayHidden && "pointer-events-none select-none",
               )}
               style={{ minHeight: `${editorSectionMinHeightPx}px` }}
               aria-hidden={editorUnderlayHidden ? true : undefined}
             >
-              <Editor
-                query={activeTab.query}
-                onQueryChange={onActiveQueryChange}
-                isRunning={status.kind === "running"}
-                onRun={handleRun}
-                onStop={handleStop}
-                onClear={handleClear}
-                onCopySql={handleCopySql}
-                onDownloadSql={handleDownloadSql}
-                onDownloadTxt={handleDownloadTxt}
-                schemaTables={schemaTables}
-                editorSectionMinHeightPx={editorSectionMinHeightPx}
-                onAdjustEditorSectionHeight={adjustEditorSectionMinHeight}
-              />
-            </div>
-
-            <div
-              class={cn(
-                "shrink-0 flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3",
-                editorUnderlayHidden && "pointer-events-none",
-              )}
-              aria-hidden={editorUnderlayHidden ? true : undefined}
-            >
-              <div class="min-w-0 flex-1">
-                <StatusBar
-                  kind={status.kind}
-                  message={status.message}
-                  errorCopyText={
-                    status.kind === "error"
-                      ? (status.copyText ?? status.message)
-                      : undefined
+              <Editor {...editorCommonProps} />
+              {compareMode ? (
+                <TableApiComparePanel
+                  sqlText={activeTab.query}
+                  form={tableApiForm}
+                  onFormChange={(next) =>
+                    setTableApiFormByTab((prev) => ({
+                      ...prev,
+                      [activeId]: next,
+                    }))
                   }
+                  onRunRest={handleRunTableApi}
+                  onRunBoth={handleRunBoth}
+                  onTranslateNotice={handleTranslateNotice}
+                  restRunning={tableApiBusy}
+                  jdbcRunning={status.kind === "running"}
+                  disableRestRun={false}
                 />
-              </div>
-              {hasStoredResults ? (
-                <button
-                  type="button"
-                  class="btn shrink-0 self-end px-2 py-0.5 text-[11px] text-muted sm:self-auto"
-                  onClick={handleClearStoredResults}
-                  title="Remove every saved result grid from localStorage (all query tabs)"
-                >
-                  Clear saved results
-                </button>
               ) : null}
             </div>
 
             <div
               class={cn(
-                "flex min-h-0 min-w-0 flex-col",
-                resultsExpanded
-                  ? "pointer-events-auto absolute left-1/2 top-0 z-50 flex h-full min-h-0 w-[calc(100vw-2rem)] -translate-x-1/2 flex-col overflow-hidden rounded-lg bg-surface shadow-2xl ring-1 ring-border sm:w-[calc(100vw-4rem)]"
-                  : "relative flex-1 min-h-0",
+                "flex min-h-0 w-full flex-col gap-2 shrink-0",
+                editorUnderlayHidden && "pointer-events-none",
               )}
+              aria-hidden={editorUnderlayHidden ? true : undefined}
             >
-              <ResultsTable
-                result={result}
-                resultsExpanded={resultsExpanded}
-                onToggleResultsExpanded={handleToggleResultsExpanded}
-              />
+              <div
+                class={cn(
+                  "grid min-w-0 w-full gap-3",
+                  compareMode ? "xl:grid-cols-2" : "grid-cols-1",
+                )}
+              >
+                <div class="flex min-w-0 flex-col gap-1">
+                  {compareMode ? (
+                    <span class="font-mono text-[10px] uppercase tracking-wide text-subtle">
+                      JDBC
+                    </span>
+                  ) : null}
+                  <StatusBar
+                    kind={status.kind}
+                    message={status.message}
+                    messageTooltip={JDBC_STATUS_TIME_TOOLTIP}
+                    badge={jdbcCompareBadge}
+                    errorCopyText={
+                      status.kind === "error"
+                        ? (status.copyText ?? status.message)
+                        : undefined
+                    }
+                  />
+                </div>
+                {compareMode ? (
+                  <div class="flex min-w-0 flex-col gap-1">
+                    <span class="font-mono text-[10px] uppercase tracking-wide text-subtle">
+                      Table API
+                    </span>
+                    <StatusBar
+                      kind={tableApiStatus.kind}
+                      message={tableApiStatus.message}
+                      messageTooltip={TABLE_API_STATUS_TIME_TOOLTIP}
+                      badge={restCompareBadge}
+                      errorCopyText={
+                        tableApiStatus.kind === "error"
+                          ? (tableApiStatus.copyText ?? tableApiStatus.message)
+                          : undefined
+                      }
+                    />
+                  </div>
+                ) : null}
+              </div>
+              {hasStoredResults ? (
+                <div class="flex justify-end">
+                  <button
+                    type="button"
+                    class="btn px-2 py-0.5 text-[11px] text-muted"
+                    onClick={handleClearStoredResults}
+                    title="Remove every saved JDBC and Table API result grid from localStorage (all query tabs)"
+                  >
+                    Clear saved results
+                  </button>
+                </div>
+              ) : null}
             </div>
+
+            {showExpandedOverlay ? (
+              <div
+                class="pointer-events-auto absolute left-1/2 top-0 z-50 flex h-full min-h-0 w-[calc(100vw-2rem)] -translate-x-1/2 flex-col overflow-hidden rounded-lg bg-surface shadow-2xl ring-1 ring-border sm:w-[calc(100vw-4rem)]"
+              >
+                <div class="shrink-0 px-4 pt-3">
+                  <p class="font-mono text-[10px] uppercase tracking-wide text-subtle">
+                    JDBC
+                  </p>
+                </div>
+                <div class="min-h-0 flex-1">
+                  <ResultsTable
+                    result={result!}
+                    resultsExpanded={resultsExpanded}
+                    onToggleResultsExpanded={handleToggleResultsExpanded}
+                    maxVisibleDataRows={null}
+                  />
+                </div>
+              </div>
+            ) : isDualJdbcRest ? (
+              <div class="grid min-h-0 min-w-0 flex-1 items-start gap-3 xl:grid-cols-2">
+                <div class="flex min-h-0 w-full min-w-0 flex-col gap-1">
+                  <p class="shrink-0 font-mono text-[10px] uppercase tracking-wide text-subtle">
+                    JDBC
+                  </p>
+                  <div class="min-h-0 w-full">
+                    <ResultsTable result={result!} resultsExpanded={false} />
+                  </div>
+                </div>
+                <div class="flex min-h-0 w-full min-w-0 flex-col gap-1">
+                  <p class="shrink-0 font-mono text-[10px] uppercase tracking-wide text-subtle">
+                    Table API
+                  </p>
+                  <div class="min-h-0 w-full">
+                    <ResultsTable result={tableApiResult!} resultsExpanded={false} />
+                  </div>
+                </div>
+              </div>
+            ) : result ? (
+              <div
+                class={cn(
+                  "flex min-h-0 min-w-0 flex-col",
+                  resultsExpanded ? "relative flex-1" : "relative flex-1 min-h-0",
+                )}
+              >
+                <ResultsTable
+                  result={result}
+                  resultsExpanded={resultsExpanded}
+                  onToggleResultsExpanded={handleToggleResultsExpanded}
+                />
+              </div>
+            ) : compareMode && tableApiResult ? (
+              <div class="flex min-h-0 min-w-0 flex-1 flex-col gap-1">
+                <p class="shrink-0 font-mono text-[10px] uppercase tracking-wide text-subtle">
+                  Table API
+                </p>
+                <div class="min-h-0 w-full">
+                  <ResultsTable result={tableApiResult} resultsExpanded={false} />
+                </div>
+              </div>
+            ) : null}
           </>
         )}
       </div>

@@ -12,6 +12,7 @@ const SPA_ROOT_SEGMENTS = new Set(["", "editor", "schema", "connections", "logs"
  */
 export const BACKEND_PROXY_PATH_PREFIXES = [
   "/query",
+  "/table-api",
   "/schema/tables",
   "/schema/columns",
   "/health",

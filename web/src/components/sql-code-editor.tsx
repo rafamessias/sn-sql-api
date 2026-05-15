@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "preact/hooks";
-import { Compartment, EditorState, type Extension } from "@codemirror/state";
+import { Compartment, EditorState, Prec, type Extension } from "@codemirror/state";
 import {
   EditorView,
   drawSelection,
@@ -17,6 +17,7 @@ import {
   history,
   historyKeymap,
   indentWithTab,
+  insertNewline,
 } from "@codemirror/commands";
 import {
   bracketMatching,
@@ -201,6 +202,14 @@ function baseExtensions(
     drawSelection(),
     dropCursor(),
     EditorState.allowMultipleSelections.of(true),
+    Prec.high(
+      keymap.of([
+        // Default `insertNewlineAndIndent` uses the SQL indent service and often
+        // inserts a single leading space on the new line; bare newline matches
+        // typical “split line / blank line” expectations in this editor.
+        { key: "Enter", run: insertNewline },
+      ]),
+    ),
     indentOnInput(),
     bracketMatching(),
     closeBrackets(),

@@ -18,20 +18,43 @@ const safeParse = <T,>(raw: string | null): T | null => {
   }
 };
 
+const LEGACY_GLOBAL_COMPARE_KEY = "sn-sql-api:editor:compareTableApi:v1";
+
 const loadInitialTabs = (): EditorTab[] => {
   if (typeof window === "undefined") return [defaultTab()];
   const stored = safeParse<unknown>(
     window.localStorage.getItem(STORAGE_KEYS.tabs),
   );
-  const sanitized = sanitizeTabs(stored);
-  if (sanitized && sanitized.length > 0) return sanitized;
-
-  // Migrate legacy single-query storage (pre multi-tab).
-  const legacy = window.localStorage.getItem(LEGACY_QUERY_KEY);
-  if (legacy && legacy.trim()) {
-    return [{ id: generateTabId(), name: "Query 1", query: legacy }];
+  let tabs = sanitizeTabs(stored);
+  if (!tabs || tabs.length === 0) {
+    const legacy = window.localStorage.getItem(LEGACY_QUERY_KEY);
+    if (legacy && legacy.trim()) {
+      return [{ id: generateTabId(), name: "Query 1", query: legacy }];
+    }
+    return [defaultTab()];
   }
-  return [defaultTab()];
+
+  try {
+    const legacyLs = window.localStorage.getItem(LEGACY_GLOBAL_COMPARE_KEY);
+    const legacySs = window.sessionStorage.getItem(LEGACY_GLOBAL_COMPARE_KEY);
+    const hadPerTabCompare = tabs.some(
+      (t) => typeof t.compareTableApi === "boolean",
+    );
+    if (
+      !hadPerTabCompare &&
+      (legacyLs === "1" || legacySs === "1")
+    ) {
+      tabs = tabs.map((t, i) =>
+        i === 0 ? { ...t, compareTableApi: true } : t,
+      );
+    }
+    window.localStorage.removeItem(LEGACY_GLOBAL_COMPARE_KEY);
+    window.sessionStorage.removeItem(LEGACY_GLOBAL_COMPARE_KEY);
+  } catch {
+    /* ignore */
+  }
+
+  return tabs;
 };
 
 const loadActiveId = (tabs: EditorTab[]): string => {
@@ -99,6 +122,23 @@ export const useEditorTabs = () => {
     [updateTab],
   );
 
+  const setLastTableApiRunTimes = useCallback(
+    (id: string, browserMs: number, instanceMs: number) => {
+      updateTab(id, {
+        lastTableApiBrowserMs: Math.max(0, Math.round(browserMs)),
+        lastTableApiInstanceMs: Math.max(0, Math.round(instanceMs)),
+      });
+    },
+    [updateTab],
+  );
+
+  const setCompareTableApi = useCallback(
+    (id: string, enabled: boolean) => {
+      updateTab(id, { compareTableApi: enabled });
+    },
+    [updateTab],
+  );
+
   const nextDefaultName = useCallback(
     (existing: EditorTab[]): string => {
       let n = existing.length + 1;
@@ -159,6 +199,8 @@ export const useEditorTabs = () => {
     setActiveQuery,
     renameTab,
     setLastRunDurationMs,
+    setLastTableApiRunTimes,
+    setCompareTableApi,
     addTab,
     closeTab,
   };

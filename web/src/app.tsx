@@ -26,6 +26,8 @@ export const App = () => {
     setActiveQuery,
     renameTab: renameEditorTab,
     setLastRunDurationMs: setEditorTabLastRunDurationMs,
+    setLastTableApiRunTimes: setEditorTabLastTableApiRunTimes,
+    setCompareTableApi: setEditorTabCompareTableApi,
     addTab: addEditorTab,
     closeTab: closeEditorTab,
   } = useEditorTabs();
@@ -92,7 +94,7 @@ export const App = () => {
   }, [addEditorTab]);
 
   return (
-    <div class="flex h-full min-h-screen flex-col">
+    <div class="flex min-h-0 w-full flex-1 flex-col">
       <Header
         connections={connections}
         activeId={activeId}
@@ -135,6 +137,10 @@ export const App = () => {
               onAddTab={handleNewEditorTab}
               onActiveQueryChange={setActiveQuery}
               onLastSuccessfulRunDuration={setEditorTabLastRunDurationMs}
+              onLastSuccessfulTableApiRun={setEditorTabLastTableApiRunTimes}
+              onCompareTableApiChange={(enabled) =>
+                setEditorTabCompareTableApi(editorActiveId, enabled)
+              }
               connectionPayload={connectionPayload}
               connectionLabel={connectionLabel}
               schemaTables={schemaTables}

@@ -84,7 +84,7 @@ export const Header = ({
   };
 
   return (
-    <header class="sticky top-0 z-20 border-b border-border bg-bg">
+    <header class="sticky top-0 z-20 shrink-0 border-b border-border bg-bg">
       <div class="mx-auto flex w-full max-w-[1400px] flex-wrap items-center gap-4 px-6 py-3">
         <div class="flex items-center gap-3">
           <button

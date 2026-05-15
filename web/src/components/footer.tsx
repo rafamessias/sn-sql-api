@@ -3,7 +3,7 @@ const LINKEDIN_URL = "https://www.linkedin.com/in/rafaelmessias/";
 const LICENSE = "MIT";
 
 export const Footer = () => (
-  <footer class="border-t border-border bg-bg">
+  <footer class="mt-auto shrink-0 border-t border-border bg-bg">
     <div class="mx-auto flex w-full max-w-[1400px] flex-wrap items-center justify-between gap-2 px-6 py-2 font-mono text-[11px] text-subtle">
       <span>
         Made by{" "}

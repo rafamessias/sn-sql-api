@@ -9,6 +9,26 @@ export type QueryResult = {
   row_count: number;
 };
 
+export type TableApiRecordsRequest = {
+  table: string;
+  connection?: ConnectionPayload;
+  sysparm_query?: string | null;
+  sysparm_fields?: string | null;
+  sysparm_limit?: number | null;
+  sysparm_offset?: number | null;
+  sysparm_display_value?: string | null;
+  sysparm_exclude_reference_link?: boolean | null;
+  sysparm_view?: string | null;
+  sysparm_query_no_domain?: boolean | null;
+  sysparm_suppress_pagination_header?: boolean | null;
+};
+
+export type TableApiRecordsResponse = QueryResult & {
+  total_count: number | null;
+  duration_ms: number;
+  request_path: string;
+};
+
 export type HealthInfo = {
   status: string;
   instance: string;
@@ -121,6 +141,68 @@ const post = async <T>(
     throw new Error(await extractDetail(response));
   }
   return (await response.json()) as T;
+};
+
+export const runTableApiRecords = async (
+  body: TableApiRecordsRequest,
+  apiKey: string | null,
+  signal?: AbortSignal,
+): Promise<TableApiRecordsResponse> => {
+  const t0 = performance.now();
+  const detail = `${body.table}${body.sysparm_query ? ` · ${body.sysparm_query.slice(0, 120)}` : ""}`;
+  appendAppLog({
+    level: "info",
+    category: "Table API",
+    message: `POST /table-api/records${body.connection ? " (custom connection)" : " (.env)"}`,
+    detail,
+  });
+  const payload: Record<string, unknown> = { table: body.table };
+  if (body.connection) payload.connection = body.connection;
+  if (body.sysparm_query != null && body.sysparm_query !== "")
+    payload.sysparm_query = body.sysparm_query;
+  if (body.sysparm_fields != null && body.sysparm_fields !== "")
+    payload.sysparm_fields = body.sysparm_fields;
+  if (body.sysparm_limit != null) payload.sysparm_limit = body.sysparm_limit;
+  if (body.sysparm_offset != null) payload.sysparm_offset = body.sysparm_offset;
+  if (body.sysparm_display_value != null && body.sysparm_display_value !== "")
+    payload.sysparm_display_value = body.sysparm_display_value;
+  if (body.sysparm_exclude_reference_link != null) {
+    payload.sysparm_exclude_reference_link = body.sysparm_exclude_reference_link;
+  }
+  if (body.sysparm_view != null && body.sysparm_view !== "")
+    payload.sysparm_view = body.sysparm_view;
+  if (body.sysparm_query_no_domain != null) {
+    payload.sysparm_query_no_domain = body.sysparm_query_no_domain;
+  }
+  if (body.sysparm_suppress_pagination_header != null) {
+    payload.sysparm_suppress_pagination_header =
+      body.sysparm_suppress_pagination_header;
+  }
+  try {
+    const result = await post<TableApiRecordsResponse>(
+      "/table-api/records",
+      payload,
+      apiKey,
+      signal,
+    );
+    appendAppLog({
+      level: "success",
+      category: "Table API",
+      message: `${result.row_count.toLocaleString()} row(s) · server ${result.duration_ms}ms · client ${elapsedMs(t0)}`,
+      detail,
+    });
+    return result;
+  } catch (err) {
+    if (isAbortError(err)) throw err;
+    const message = err instanceof Error ? err.message : String(err);
+    appendAppLog({
+      level: "error",
+      category: "Table API",
+      message: `${message} · ${elapsedMs(t0)}`,
+      detail,
+    });
+    throw err;
+  }
 };
 
 export const runQuery = async (

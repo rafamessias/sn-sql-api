@@ -6,6 +6,10 @@ import { useVirtualList } from "../hooks/use-virtual-list";
 import { cn } from "../lib/cn";
 
 const ROW_HEIGHT = 32;
+/** Sticky header row inside the scroll area (`min-h-[2.5rem]`). */
+const SCROLL_GRID_HEADER_REM = 2.5;
+/** Default cap on visible data rows before vertical scroll (non-expanded). */
+export const RESULTS_TABLE_DEFAULT_MAX_DATA_ROWS = 25;
 const MIN_COL_WIDTH = 160;
 /** Fixed track for the leading row-number column. */
 const ROW_NUM_COL = "minmax(2.75rem, 3.25rem)";
@@ -22,6 +26,14 @@ type ResultsTableProps = {
   result: QueryResult;
   resultsExpanded?: boolean;
   onToggleResultsExpanded?: () => void;
+  /** Shown next to the status dot; omit when a title is shown outside the table. */
+  resultLabel?: string;
+  /**
+   * Max data rows in the scroll viewport before scrolling (sticky column header counts toward height).
+   * Omit for `RESULTS_TABLE_DEFAULT_MAX_DATA_ROWS`. Pass `null` for no cap.
+   * Ignored when `resultsExpanded` is true.
+   */
+  maxVisibleDataRows?: number | null;
 };
 
 const cellSearchText = (value: CellValue): string => {
@@ -92,7 +104,22 @@ export const ResultsTable = ({
   result,
   resultsExpanded = false,
   onToggleResultsExpanded,
+  resultLabel,
+  maxVisibleDataRows,
 }: ResultsTableProps) => {
+  const dataRowCap = resultsExpanded
+    ? undefined
+    : maxVisibleDataRows === null
+      ? undefined
+      : maxVisibleDataRows !== undefined
+        ? maxVisibleDataRows
+        : RESULTS_TABLE_DEFAULT_MAX_DATA_ROWS;
+
+  const scrollAreaMaxHeight =
+    dataRowCap != null && dataRowCap > 0
+      ? `calc(${SCROLL_GRID_HEADER_REM}rem + ${dataRowCap * ROW_HEIGHT}px)`
+      : undefined;
+
   const { sortedRows, sort, toggleSort } = useSortedRows(result.rows);
   const [filterText, setFilterText] = useState("");
 
@@ -160,10 +187,12 @@ export const ResultsTable = ({
     >
       <div class="flex flex-wrap items-end justify-between gap-3 border-b border-border bg-surface-2 px-4 py-2">
         <div class="flex min-w-0 flex-1 flex-wrap items-end gap-3">
-          <div class="flex shrink-0 items-center gap-2 font-mono text-[11px] text-subtle">
-            <span class="h-2 w-2 rounded-full bg-accent" aria-hidden="true" />
-            <span class="text-accent">result</span>
-          </div>
+          {resultLabel != null && resultLabel.trim() !== "" ? (
+            <div class="flex shrink-0 items-center gap-2 font-mono text-[11px] text-subtle">
+              <span class="h-2 w-2 rounded-full bg-accent" aria-hidden="true" />
+              <span class="text-accent">{resultLabel}</span>
+            </div>
+          ) : null}
           <div class="min-w-[12rem] max-w-full flex-1 sm:max-w-md">
             <label class="sr-only" for="results-grid-filter">
               Search result rows
@@ -236,6 +265,11 @@ export const ResultsTable = ({
       <div
         ref={containerRef}
         class="relative isolate min-h-0 flex-1 overflow-auto bg-code"
+        style={
+          scrollAreaMaxHeight != null
+            ? { maxHeight: scrollAreaMaxHeight }
+            : undefined
+        }
       >
         <div class="inline-block min-w-full align-top">
           <div

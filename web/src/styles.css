@@ -4,13 +4,13 @@
 
 @layer base {
   html,
-  body,
-  #app {
-    @apply h-full;
-  }
-
   body {
     @apply min-h-screen;
+  }
+
+  /** Flex column so the shell can grow past the viewport when content is tall (footer follows). */
+  #app {
+    @apply flex min-h-screen w-full flex-col;
   }
 
   * {

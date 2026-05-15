@@ -18,7 +18,7 @@ export const Tabs = ({ active, onChange, tabs }: TabsProps) => (
   <nav
     role="tablist"
     aria-label="Console sections"
-    class="border-b border-border bg-bg"
+    class="shrink-0 border-b border-border bg-bg"
   >
     <div class="mx-auto flex w-full max-w-[1400px] items-center gap-1 px-4">
       {tabs.map((tab) => {

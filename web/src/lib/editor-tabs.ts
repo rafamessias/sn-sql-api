@@ -4,6 +4,12 @@ export type EditorTab = {
   query: string;
   /** Wall-clock duration (ms) of the last successful Run, persisted with the tab. */
   lastRunDurationMs?: number;
+  /** Last successful Table API run — browser round-trip (ms), persisted with the tab. */
+  lastTableApiBrowserMs?: number;
+  /** Last successful Table API run — API→ServiceNow call duration (ms), persisted with the tab. */
+  lastTableApiInstanceMs?: number;
+  /** When true, show split JDBC + Table API editor for this tab (persisted). */
+  compareTableApi?: boolean;
 };
 
 export const STORAGE_KEYS = {
@@ -46,11 +52,42 @@ export const sanitizeTabs = (raw: unknown): EditorTab[] | null => {
       lastRaw <= 86_400_000
         ? Math.round(lastRaw)
         : undefined;
-    out.push(
-      lastRunDurationMs !== undefined
-        ? { id, name, query, lastRunDurationMs }
-        : { id, name, query },
-    );
+    const browserRaw = obj.lastTableApiBrowserMs;
+    const instanceRaw = obj.lastTableApiInstanceMs;
+    const lastTableApiBrowserMs =
+      typeof browserRaw === "number" &&
+      Number.isFinite(browserRaw) &&
+      browserRaw >= 0 &&
+      browserRaw <= 86_400_000
+        ? Math.round(browserRaw)
+        : undefined;
+    const lastTableApiInstanceMs =
+      typeof instanceRaw === "number" &&
+      Number.isFinite(instanceRaw) &&
+      instanceRaw >= 0 &&
+      instanceRaw <= 86_400_000
+        ? Math.round(instanceRaw)
+        : undefined;
+
+    const cr = obj.compareTableApi;
+    const compareTableApi =
+      cr === true ? true : cr === false ? false : undefined;
+
+    const tab: EditorTab = { id, name, query };
+    if (lastRunDurationMs !== undefined) {
+      tab.lastRunDurationMs = lastRunDurationMs;
+    }
+    if (
+      lastTableApiBrowserMs !== undefined &&
+      lastTableApiInstanceMs !== undefined
+    ) {
+      tab.lastTableApiBrowserMs = lastTableApiBrowserMs;
+      tab.lastTableApiInstanceMs = lastTableApiInstanceMs;
+    }
+    if (compareTableApi !== undefined) {
+      tab.compareTableApi = compareTableApi;
+    }
+    out.push(tab);
   }
   return out;
 };

@@ -29,7 +29,6 @@ type EditorProps = {
   onStop: () => void;
   onClear: () => void;
   onCopySql: () => void;
-  onDownloadSql: () => void;
   onDownloadTxt: () => void;
   schemaTables?: readonly string[];
   /** When set with `onAdjustEditorSectionHeight`, shows ± height controls (persisted by parent). */
@@ -83,7 +82,6 @@ export const Editor = ({
   onStop,
   onClear,
   onCopySql,
-  onDownloadSql,
   onDownloadTxt,
   schemaTables,
   editorSectionMinHeightPx,
@@ -314,15 +312,6 @@ export const Editor = ({
             title="Copy query to the clipboard"
           >
             Copy SQL
-          </button>
-          <button
-            type="button"
-            class="btn"
-            onClick={onDownloadSql}
-            disabled={isRunning || !canShareQuery}
-            title="Download the query as a .sql file"
-          >
-            Save .sql
           </button>
           <button
             type="button"
