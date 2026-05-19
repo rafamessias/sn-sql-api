@@ -178,6 +178,71 @@ def _execute_page(
         curs.close()
 
 
+def _execute_page_row_count(
+    conn: Any,
+    page_sql: str,
+    parameters: Sequence[Any] | None,
+) -> int:
+    """Returns the number of rows for a page without retaining cell values."""
+
+    curs = conn.cursor()
+    try:
+        if parameters:
+            curs.execute(page_sql, parameters)
+        else:
+            curs.execute(page_sql)
+        return len(curs.fetchall())
+    finally:
+        curs.close()
+
+
+def _fetch_row_count(
+    conn: Any,
+    base_sql: str,
+    parameters: Sequence[Any] | None,
+    *,
+    user_limit: int | None,
+    user_offset: int,
+    page_size: int,
+) -> int:
+    """Multi-page row count for timing-only mode (no row materialization)."""
+
+    total = 0
+    offset = user_offset
+    remaining = user_limit
+    pages = 0
+    max_pages = (
+        10_000
+        if user_limit is None
+        else (user_limit + page_size - 1) // page_size + 2
+    )
+
+    while pages < max_pages:
+        pages += 1
+        if remaining is not None and remaining <= 0:
+            break
+
+        chunk_limit = page_size if remaining is None else min(page_size, remaining)
+        page_sql = _page_sql(base_sql, chunk_limit, offset)
+        page_count = _execute_page_row_count(conn, page_sql, parameters)
+
+        if page_count == 0:
+            break
+
+        total += page_count
+
+        if user_limit is not None and total >= user_limit:
+            if total > user_limit:
+                total = user_limit
+            break
+
+        offset += page_count
+        if remaining is not None:
+            remaining -= page_count
+
+    return total
+
+
 def _fetch_all_rows(
     conn: Any,
     base_sql: str,
@@ -246,29 +311,37 @@ def run_query(
 
     with get_connection(override) as conn:
         base_sql, user_limit, user_offset = _parse_trailing_limit_offset(cleaned_query)
+        page_size = settings.sn_jdbc_page_size
+        if timing_only:
+            row_count = _fetch_row_count(
+                conn,
+                base_sql,
+                parameters,
+                user_limit=user_limit,
+                user_offset=user_offset,
+                page_size=page_size,
+            )
+            elapsed_ms = int((time.monotonic() - started) * 1000)
+            return {
+                "columns": [],
+                "rows": [],
+                "row_count": row_count,
+                "timing_only": True,
+                "duration_ms": elapsed_ms,
+                "timing_note": (
+                    f"Full JDBC fetch: {row_count:,} row(s); "
+                    "row data not sent to the browser."
+                ),
+            }
+
         columns, rows = _fetch_all_rows(
             conn,
             base_sql,
             parameters,
             user_limit=user_limit,
             user_offset=user_offset,
-            page_size=settings.sn_jdbc_page_size,
+            page_size=page_size,
         )
-
-    if timing_only:
-        row_count = len(rows)
-        elapsed_ms = int((time.monotonic() - started) * 1000)
-        return {
-            "columns": [],
-            "rows": [],
-            "row_count": row_count,
-            "timing_only": True,
-            "duration_ms": elapsed_ms,
-            "timing_note": (
-                f"Full JDBC fetch: {row_count:,} row(s); "
-                "row data not sent to the browser."
-            ),
-        }
 
     return {
         "columns": columns,

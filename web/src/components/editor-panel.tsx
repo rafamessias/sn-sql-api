@@ -211,12 +211,6 @@ export const EditorPanel = ({
 
   const tabIdsKey = useMemo(() => tabs.map((t) => t.id).join("|"), [tabs]);
 
-  /** Tabs without split JDBC+REST compare — JDBC grids show and persist all rows. */
-  const jdbcOnlyTabIds = useMemo(
-    () => new Set(tabs.filter((t) => t.compareTableApi !== true).map((t) => t.id)),
-    [tabs],
-  );
-
   useEffect(() => {
     const tabIds = new Set(
       tabIdsKey.length > 0 ? tabIdsKey.split("|") : [],
@@ -250,12 +244,8 @@ export const EditorPanel = ({
         filtered[id] = resultsByTab[id]!;
       }
     }
-    persistQueryResultsByTab(
-      filterQueryResultsForPersist(filtered, {
-        jdbcOnlyTabIds: jdbcOnlyTabIds,
-      }),
-    );
-  }, [resultsByTab, tabIdsKey, jdbcOnlyTabIds]);
+    persistQueryResultsByTab(filterQueryResultsForPersist(filtered));
+  }, [resultsByTab, tabIdsKey]);
 
   useEffect(() => {
     const tabIds = new Set(

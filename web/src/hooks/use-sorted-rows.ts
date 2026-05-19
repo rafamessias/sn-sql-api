@@ -1,5 +1,7 @@
-import { useMemo, useState } from "preact/hooks";
+import { useCallback, useEffect, useState } from "preact/hooks";
 import type { CellValue } from "../lib/api";
+import { compareCellValues } from "../lib/compare-cell-values";
+import { sortRowsInWorker } from "../lib/sort-rows-worker";
 
 export type SortDir = "asc" | "desc" | null;
 
@@ -8,29 +10,23 @@ export type SortState = {
   direction: SortDir;
 };
 
-const compareValues = (a: CellValue, b: CellValue): number => {
-  if (a === b) return 0;
-  if (a === null || a === undefined) return 1;
-  if (b === null || b === undefined) return -1;
+/** Sort large grids off the main thread to avoid tab freezes. */
+const SORT_IN_WORKER_MIN_ROWS = 5_000;
 
-  const an = typeof a === "number" ? a : Number(a);
-  const bn = typeof b === "number" ? b : Number(b);
-  const bothNumeric =
-    typeof a !== "boolean" &&
-    typeof b !== "boolean" &&
-    !Number.isNaN(an) &&
-    !Number.isNaN(bn) &&
-    String(a).trim() !== "" &&
-    String(b).trim() !== "";
-
-  if (bothNumeric) {
-    return an < bn ? -1 : an > bn ? 1 : 0;
-  }
-
-  return String(a).localeCompare(String(b), undefined, {
-    numeric: true,
-    sensitivity: "base",
+const sortRowsSync = (
+  rows: CellValue[][],
+  columnIndex: number,
+  direction: "asc" | "desc",
+): CellValue[][] => {
+  const indexed = rows.map((row, i) => ({ row, i }));
+  indexed.sort((a, b) => {
+    const cmp = compareCellValues(
+      a.row[columnIndex] ?? null,
+      b.row[columnIndex] ?? null,
+    );
+    return direction === "asc" ? cmp : -cmp;
   });
+  return indexed.map((entry) => entry.row);
 };
 
 export const useSortedRows = (rows: CellValue[][]) => {
@@ -38,19 +34,49 @@ export const useSortedRows = (rows: CellValue[][]) => {
     columnIndex: null,
     direction: null,
   });
+  const [sortedRows, setSortedRows] = useState<CellValue[][]>(rows);
+  const [isSorting, setIsSorting] = useState(false);
 
-  const sortedRows = useMemo(() => {
-    if (sort.columnIndex === null || sort.direction === null) return rows;
-    const indexed = rows.map((row, i) => ({ row, i }));
-    indexed.sort((a, b) => {
-      const cmp = compareValues(
-        a.row[sort.columnIndex as number],
-        b.row[sort.columnIndex as number],
-      );
-      return sort.direction === "asc" ? cmp : -cmp;
-    });
-    return indexed.map((entry) => entry.row);
-  }, [rows, sort]);
+  const applySort = useCallback(
+    (inputRows: CellValue[][], state: SortState) => {
+      if (state.columnIndex === null || state.direction === null) {
+        return inputRows;
+      }
+      return sortRowsSync(inputRows, state.columnIndex, state.direction);
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (sort.columnIndex === null || sort.direction === null) {
+      setSortedRows(rows);
+      setIsSorting(false);
+      return;
+    }
+
+    if (rows.length < SORT_IN_WORKER_MIN_ROWS) {
+      setSortedRows(applySort(rows, sort));
+      setIsSorting(false);
+      return;
+    }
+
+    let cancelled = false;
+    setIsSorting(true);
+    sortRowsInWorker(rows, sort.columnIndex, sort.direction)
+      .then((next) => {
+        if (!cancelled) setSortedRows(next);
+      })
+      .catch(() => {
+        if (!cancelled) setSortedRows(applySort(rows, sort));
+      })
+      .finally(() => {
+        if (!cancelled) setIsSorting(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [rows, sort, applySort]);
 
   const toggleSort = (columnIndex: number) => {
     setSort((prev) => {
@@ -64,5 +90,5 @@ export const useSortedRows = (rows: CellValue[][]) => {
     });
   };
 
-  return { sortedRows, sort, toggleSort };
+  return { sortedRows, sort, toggleSort, isSorting };
 };

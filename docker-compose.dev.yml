@@ -6,6 +6,7 @@ services:
     environment:
       - PYTHONDONTWRITEBYTECODE=1
       - PYTHONUNBUFFERED=1
+      - JAVA_TOOL_OPTIONS=${JAVA_TOOL_OPTIONS:--Xmx2g}
     command:
       [
         "uvicorn",

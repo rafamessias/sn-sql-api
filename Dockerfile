@@ -20,6 +20,8 @@ FROM python:3.11-slim AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
+# Override at runtime via compose / .env; container memory should exceed JVM + Python peaks.
+ENV JAVA_TOOL_OPTIONS=-Xmx2g
 
 WORKDIR /app
 

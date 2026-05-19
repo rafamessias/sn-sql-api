@@ -13,6 +13,9 @@ services:
     container_name: sn-sql-api
     env_file:
       - .env
+    environment:
+      # JVM heap for JPype/JDBC; raise container memory limit above this + Python headroom.
+      JAVA_TOOL_OPTIONS: ${JAVA_TOOL_OPTIONS:--Xmx2g}
     ports:
       - "8000:8000"
     volumes:

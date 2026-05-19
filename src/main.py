@@ -165,6 +165,8 @@ class _LocalhostBindFilter(logging.Filter):
 
 logging.getLogger("uvicorn.error").addFilter(_LocalhostBindFilter())
 
+log = logging.getLogger("uvicorn.error")
+
 app = FastAPI(
     title="ServiceNow SQL API",
     description=(
@@ -345,6 +347,11 @@ class AboutResponse(BaseModel):
 _EGRESS_PROBE_URL = "https://api.ipify.org?format=json"
 _EGRESS_PROBE_TIMEOUT_S = 8.0
 _HEALTH_CHECK_TIMEOUT_S = 25.0
+_QUERY_MEMORY_ERROR_DETAIL = (
+    "Query exceeded available memory while fetching results. "
+    "Reduce the result set (SQL LIMIT), use timing-only mode, or increase "
+    "container memory and JAVA_TOOL_OPTIONS (JVM heap)."
+)
 
 
 def verify_api_key(x_api_key: str | None = Header(default=None)) -> None:
@@ -945,15 +952,22 @@ def debug_ui_serving() -> dict[str, object]:
     response_model=QueryResponse,
     dependencies=[Depends(verify_api_key)],
 )
-def execute_query(payload: QueryRequest) -> QueryResponse:
+async def execute_query(payload: QueryRequest) -> QueryResponse:
     try:
-        result = run_query(
+        result = await asyncio.to_thread(
+            run_query,
             payload.query,
             payload.parameters,
             _to_override(payload.connection),
             timing_only=payload.timing_only,
         )
         return QueryResponse(**result)
+    except MemoryError as exc:
+        log.exception("Query failed: out of memory")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=_QUERY_MEMORY_ERROR_DETAIL,
+        ) from exc
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -1020,9 +1034,10 @@ def fetch_columns(payload: ColumnsRequest) -> ColumnsResponse:
         "the ServiceNow Table API reference."
     ),
 )
-def table_api_records(payload: TableApiRecordsRequest) -> TableApiRecordsResponse:
+async def table_api_records(payload: TableApiRecordsRequest) -> TableApiRecordsResponse:
     try:
-        data = fetch_table_api_records(
+        data = await asyncio.to_thread(
+            fetch_table_api_records,
             table=payload.table,
             override=_to_override(payload.connection),
             sysparm_query=payload.sysparm_query,
@@ -1037,6 +1052,12 @@ def table_api_records(payload: TableApiRecordsRequest) -> TableApiRecordsRespons
             timing_only=payload.timing_only,
         )
         return TableApiRecordsResponse(**data)
+    except MemoryError as exc:
+        log.exception("Table API request failed: out of memory")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=_QUERY_MEMORY_ERROR_DETAIL,
+        ) from exc
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
